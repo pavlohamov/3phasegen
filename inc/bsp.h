@@ -21,9 +21,11 @@ typedef enum {
 	BSP_Pin_PWM_1,
 	BSP_Pin_PWM_2,
 	BSP_Pin_PWM_3,
-	BSP_Pin_EN_1,
-	BSP_Pin_EN_2,
-	BSP_Pin_EN_3,
+
+	BSP_Pin_POL_1,
+	BSP_Pin_POL_2,
+	BSP_Pin_POL_3,
+
 	BSP_Pin_LED,
 	BSP_Pin_Adc,
 
@@ -38,6 +40,9 @@ void BSP_FeedWatchdog(void);
 
 void BSP_SetPinVal(const BSP_Pin_t pin, const _Bool state);
 _Bool BSP_GetPinVal(const BSP_Pin_t pin);
+
+void BSP_SetPinPWM(const BSP_Pin_t pin, const uint32_t value);
+void BSP_SetSinBase(const uint32_t value);
 
 #ifdef __cplusplus
 }

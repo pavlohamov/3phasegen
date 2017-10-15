@@ -64,7 +64,7 @@ void EventQueue_Dispose(Event_t *event) {
 
 static Node_t *newNode(EventTypes_e type, void *data, onEvtDispose_f dispose) {
 	Node_t *node = MEMMAN_malloc(sizeof(Node_t));
-	if (node){
+	if (node) {
 		node->evt.type = type;
 		node->evt.data = data;
 		node->evt.dispose = dispose;
@@ -74,7 +74,9 @@ static Node_t *newNode(EventTypes_e type, void *data, onEvtDispose_f dispose) {
 }
 
 static Node_t *getTail(Node_t *node) {
-	while (node && node->next)
+	if (!node)
+		return NULL;
+	while (node->next)
 		node = node->next;
 	return node;
 }

@@ -40,8 +40,8 @@ static struct {
 } s_timers;
 
 
-static uint32_t getNewHandle(void);
-static uint8_t isTimerHandleUnique(uint32_t handle);
+static inline uint32_t getNewHandle(void);
+static inline uint8_t isTimerHandleUnique(uint32_t handle);
 static uint32_t findTimerById(uint32_t handle);
 static void freeTimer(uint32_t position);
 

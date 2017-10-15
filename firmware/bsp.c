@@ -18,20 +18,22 @@
 #include "stm32f0xx_tim.h"
 
 #include <stddef.h>
+#include <stdlib.h>
 
 #define ADC_TIMEOUT (BSP_TICKS_PER_SECOND/50)
 
-static void initialize_RCC(void);
-static void initWdt(void);
-static void initADC(void);
-static void initADC_NVIC(void);
-static void initPWM_TIM(void);
-static void initPWM_OC(void);
+static inline void initialize_RCC(void);
+static inline void initWdt(void);
+static inline void initADC(void);
+static inline void initADC_NVIC(void);
+static inline void initPWM_TIM(void);
+static inline void initPWM_OC(void);
+static inline void initSIN_TIM(void);
 
 static void setSystemLed(_Bool state);
 
 static void onAdcTimeout(uint32_t id, void *data);
-static _Bool handleAdcITFlag(uint32_t flag);
+static inline _Bool handleAdcITFlag(uint32_t flag);
 
 static uint32_t s_adcTimerId = INVALID_HANDLE;
 
@@ -45,12 +47,52 @@ _Bool BSP_Init(void) {
 	initADC();
 	initPWM_TIM();
 	initPWM_OC();
+	initSIN_TIM();
 
 	return true;
 }
 
 void BSP_FeedWatchdog(void) {
 	IWDG_ReloadCounter();
+}
+
+void BSP_SetPinPWM(const BSP_Pin_t pin, const uint32_t value) {
+
+    TIM_OCInitTypeDef pwm = {
+		TIM_OCMode_PWM1,
+		TIM_OutputState_Enable,
+		0,
+		value,
+		TIM_OCPolarity_High,
+		0, 0, 0
+    };
+
+	switch (pin) {
+	case BSP_Pin_PWM_1:
+	    TIM_OC4Init(TIM3, &pwm);
+		break;
+	case BSP_Pin_PWM_2:
+	    TIM_OC2Init(TIM3, &pwm);
+		break;
+	case BSP_Pin_PWM_3:
+	    TIM_OC1Init(TIM3, &pwm);
+		break;
+	default:
+		return;
+		break;
+	}
+}
+
+void BSP_SetSinBase(const uint32_t value) {
+	TIM_TimeBaseInitTypeDef iface = {
+			0xF + (value>>4),
+			TIM_CounterMode_Up,
+			0xFF,
+			TIM_CKD_DIV1,
+			0
+	};
+
+	TIM_TimeBaseInit(TIM14, &iface);
 }
 
 static void initialize_RCC(void) {
@@ -65,6 +107,7 @@ static void initialize_RCC(void) {
 
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_ADC1, ENABLE);
 	RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM3, ENABLE);
+	RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM14, ENABLE);
 
 	GPIO_DeInit(GPIOA);
 	GPIO_DeInit(GPIOB);
@@ -118,7 +161,7 @@ static void initADC_NVIC(void) {
 
 static void initPWM_TIM(void) {
 	TIM_TimeBaseInitTypeDef iface = {
-			0x2,
+			0x4,
 			TIM_CounterMode_Up,
 			0xFF,
 			TIM_CKD_DIV1,
@@ -130,22 +173,69 @@ static void initPWM_TIM(void) {
 }
 
 static void initPWM_OC(void) {
+
     TIM_OCInitTypeDef pwm = {
-                    TIM_OCMode_PWM1,
-                    TIM_OutputState_Enable,
-                    0,
-                    0,
-                    TIM_OCPolarity_High,
-                    0, 0, 0
+		TIM_OCMode_PWM1,
+		TIM_OutputState_Enable,
+		0,
+		0,
+		TIM_OCPolarity_High,
+		0, 0, 0
     };
     TIM_OC1Init(TIM3, &pwm);
-    pwm.TIM_Pulse = 127;
     TIM_OC2Init(TIM3, &pwm);
-    pwm.TIM_Pulse = 255;
     TIM_OC4Init(TIM3, &pwm);
     TIM_CCxCmd(TIM3, TIM_Channel_1, TIM_CCx_Enable);
     TIM_CCxCmd(TIM3, TIM_Channel_2, TIM_CCx_Enable);
     TIM_CCxCmd(TIM3, TIM_Channel_4, TIM_CCx_Enable);
+}
+
+static void initSIN_TIM(void) {
+	BSP_SetSinBase(0);
+	TIM_ITConfig(TIM14, TIM_IT_Update, ENABLE);
+	TIM_Cmd(TIM14, ENABLE);
+
+	NVIC_InitTypeDef nvic = {
+			TIM14_IRQn,
+			0,
+			ENABLE
+	};
+	NVIC_Init(&nvic);
+}
+static const uint8_t vals[] = {
+		0, 12, 24, 36, 48, 59, 70, 80,
+		89, 98, 105, 112, 117, 121, 124, 126,
+		127, 126, 124, 121, 117, 112, 105, 98,
+		89, 80, 70, 59, 48, 36, 24, 12,
+		0, -12, -24, -36, -48, -59, -70, -80,
+		-89, -98, -105, -112, -117, -121, -124, -126,
+		-127, -126, -124, -121, -117, -112, -105, -98,
+		-89, -80, -70, -59, -48, -36, -24, -12,
+};
+static const size_t stepsMax = sizeof(vals)/sizeof(*vals);
+static int8_t getVal(const size_t step) {
+	if (step > stepsMax)
+		return vals[step%stepsMax];
+	return vals[step];
+}
+
+void TIM14_IRQHandler(void) {
+
+	TIM_ClearFlag(TIM14, TIM_IT_Update);
+	static uint8_t stepA = 0;
+	static uint8_t stepB = stepsMax/3;
+	static uint8_t stepC = 2*stepsMax/3;
+	const int8_t valA = getVal(stepA++);
+	const int8_t valB = getVal(stepB++);
+	const int8_t valC = getVal(stepC++);
+
+	BSP_SetPinPWM(BSP_Pin_PWM_1, abs(valA*2));
+	BSP_SetPinPWM(BSP_Pin_PWM_2, abs(valB*2));
+	BSP_SetPinPWM(BSP_Pin_PWM_3, abs(valC*2));
+
+	BSP_SetPinVal(BSP_Pin_POL_1, valA > 0);
+	BSP_SetPinVal(BSP_Pin_POL_2, valB > 0);
+	BSP_SetPinVal(BSP_Pin_POL_3, valC > 0);
 }
 
 static void setSystemLed(_Bool state) {
