@@ -85,9 +85,9 @@ void BSP_SetPinPWM(const BSP_Pin_t pin, const uint32_t value) {
 
 void BSP_SetSinBase(const uint32_t value) {
 	TIM_TimeBaseInitTypeDef iface = {
-			0xF + (value>>4),
+			0x7 + value,
 			TIM_CounterMode_Up,
-			0xFF,
+			0x7F,
 			TIM_CKD_DIV1,
 			0
 	};
@@ -115,11 +115,11 @@ static void initialize_RCC(void) {
 }
 
 static void initWdt(void) {
-//	IWDG_WriteAccessCmd(IWDG_WriteAccess_Enable);
-//	IWDG_SetPrescaler(IWDG_Prescaler_32);
-//	IWDG_SetReload(0x0FFF);
-//	IWDG_ReloadCounter();
-//	IWDG_Enable();
+	IWDG_WriteAccessCmd(IWDG_WriteAccess_Enable);
+	IWDG_SetPrescaler(IWDG_Prescaler_32);
+	IWDG_SetReload(0x0FFF);
+	IWDG_ReloadCounter();
+	IWDG_Enable();
 }
 
 static void initADC(void) {
@@ -213,10 +213,8 @@ static const uint8_t vals[] = {
 		-89, -80, -70, -59, -48, -36, -24, -12,
 };
 static const size_t stepsMax = sizeof(vals)/sizeof(*vals);
-static int8_t getVal(const size_t step) {
-	if (step > stepsMax)
-		return vals[step%stepsMax];
-	return vals[step];
+static inline int8_t getVal(const size_t step) {
+	return vals[step%stepsMax];
 }
 
 void TIM14_IRQHandler(void) {
@@ -229,9 +227,9 @@ void TIM14_IRQHandler(void) {
 	const int8_t valB = getVal(stepB++);
 	const int8_t valC = getVal(stepC++);
 
-	BSP_SetPinPWM(BSP_Pin_PWM_1, abs(valA*2));
-	BSP_SetPinPWM(BSP_Pin_PWM_2, abs(valB*2));
-	BSP_SetPinPWM(BSP_Pin_PWM_3, abs(valC*2));
+	BSP_SetPinPWM(BSP_Pin_PWM_1, abs(valA));
+	BSP_SetPinPWM(BSP_Pin_PWM_2, abs(valB));
+	BSP_SetPinPWM(BSP_Pin_PWM_3, abs(valC));
 
 	BSP_SetPinVal(BSP_Pin_POL_1, valA > 0);
 	BSP_SetPinVal(BSP_Pin_POL_2, valB > 0);

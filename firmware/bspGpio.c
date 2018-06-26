@@ -11,7 +11,7 @@
 #include "stm32f0xx_gpio.h"
 
 typedef struct {
-	const GPIO_TypeDef *port;
+	GPIO_TypeDef *const port;
 	const GPIO_InitTypeDef setting;
 } BspGpioConfig_t;
 
@@ -37,7 +37,7 @@ static const BspGpioConfig_t s_gpioConfig[] = {
 				GPIO_Speed_Level_1, GPIO_OType_PP,  GPIO_PuPd_NOPULL} },
 
 
-	[BSP_Pin_LED] = { GPIOF, { GPIO_Pin_0, GPIO_Mode_OUT,
+	[BSP_Pin_LED] = { GPIOA, { GPIO_Pin_4, GPIO_Mode_OUT,
 				GPIO_Speed_Level_1, GPIO_OType_PP,  GPIO_PuPd_NOPULL} },
 
 	[BSP_Pin_Adc] = { GPIOA, { GPIO_Pin_0, GPIO_Mode_IN,
@@ -62,8 +62,10 @@ void BSP_InitGpio(void) {
 void BSP_SetPinVal(const BSP_Pin_t pin, const _Bool state) {
 	if (pin > BSP_Pin_Last)
 		return;
-	BitAction act = state ? Bit_SET : Bit_RESET;
-	GPIO_WriteBit((GPIO_TypeDef*)s_gpioConfig[pin].port, s_gpioConfig[pin].setting.GPIO_Pin, act);
+	if (state)
+		s_gpioConfig[pin].port->BSRR = s_gpioConfig[pin].setting.GPIO_Pin;
+	else
+		s_gpioConfig[pin].port->BRR = s_gpioConfig[pin].setting.GPIO_Pin;
 }
 
 _Bool BSP_GetPinVal(const BSP_Pin_t pin) {
