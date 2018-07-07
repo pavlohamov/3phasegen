@@ -283,29 +283,15 @@ void SystemCoreClockUpdate (void)
   */
 static void SetSysClock(void)
 {
-  __IO uint32_t StartUpCounter = 0, HSEStatus = 0;
+
   
   /* SYSCLK, HCLK, PCLK configuration ----------------------------------------*/
   /* Enable HSE */    
   RCC->CR |= ((uint32_t)RCC_CR_HSEON);
  
-  /* Wait till HSE is ready and if Time out is reached exit */
-  do
-  {
-    HSEStatus = RCC->CR & RCC_CR_HSERDY;
-    StartUpCounter++;  
-  } while((HSEStatus == 0) && (StartUpCounter != HSE_STARTUP_TIMEOUT));
 
-  if ((RCC->CR & RCC_CR_HSERDY) != RESET)
-  {
-    HSEStatus = (uint32_t)0x01;
-  }
-  else
-  {
-    HSEStatus = (uint32_t)0x00;
-  }  
 
-  if (HSEStatus == (uint32_t)0x01)
+  if (0)
   {
     /* Enable Prefetch Buffer and set Flash Latency */
     FLASH->ACR = FLASH_ACR_PRFTBE | FLASH_ACR_LATENCY;

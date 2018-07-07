@@ -37,7 +37,7 @@ static const BspGpioConfig_t s_gpioConfig[] = {
 				GPIO_Speed_Level_1, GPIO_OType_PP,  GPIO_PuPd_NOPULL} },
 
 
-	[BSP_Pin_LED] = { GPIOA, { GPIO_Pin_4, GPIO_Mode_OUT,
+	[BSP_Pin_LED] = { GPIOA, { GPIO_Pin_5, GPIO_Mode_OUT,
 				GPIO_Speed_Level_1, GPIO_OType_PP,  GPIO_PuPd_NOPULL} },
 
 	[BSP_Pin_Adc] = { GPIOA, { GPIO_Pin_0, GPIO_Mode_IN,

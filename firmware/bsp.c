@@ -49,6 +49,12 @@ _Bool BSP_Init(void) {
 	initPWM_OC();
 	initSIN_TIM();
 
+	BSP_SetPinPWM(BSP_Pin_PWM_2, 0);
+	BSP_SetPinPWM(BSP_Pin_PWM_1, 0);
+
+	BSP_SetPinVal(BSP_Pin_POL_1, 1);
+	BSP_SetPinVal(BSP_Pin_POL_2, 0);
+
 	return true;
 }
 
@@ -161,9 +167,9 @@ static void initADC_NVIC(void) {
 
 static void initPWM_TIM(void) {
 	TIM_TimeBaseInitTypeDef iface = {
-			0x4,
+			0x0,
 			TIM_CounterMode_Up,
-			0xFF,
+			0x7F,
 			TIM_CKD_DIV1,
 			0
 	};
@@ -220,24 +226,41 @@ static inline int8_t getVal(const size_t step) {
 void TIM14_IRQHandler(void) {
 
 	TIM_ClearFlag(TIM14, TIM_IT_Update);
-	static uint8_t stepA = 0;
-	static uint8_t stepB = stepsMax/3;
-	static uint8_t stepC = 2*stepsMax/3;
-	const int8_t valA = getVal(stepA++);
-	const int8_t valB = getVal(stepB++);
-	const int8_t valC = getVal(stepC++);
+	static uint8_t step = 0;
+	const int8_t val = getVal(step++);
+	const uint8_t res = abs(val);
+	if (val > 0) {
+		BSP_SetPinVal(BSP_Pin_POL_1, 0);
+		BSP_SetPinVal(BSP_Pin_POL_2, 1);
+		BSP_SetPinPWM(BSP_Pin_PWM_2, res);
+		BSP_SetPinPWM(BSP_Pin_PWM_1, res);
+	} else {
+		BSP_SetPinVal(BSP_Pin_POL_1, 1);
+		BSP_SetPinVal(BSP_Pin_POL_2, 0);
+		BSP_SetPinPWM(BSP_Pin_PWM_2, res);
+		BSP_SetPinPWM(BSP_Pin_PWM_1, res);
+	}
 
-	BSP_SetPinPWM(BSP_Pin_PWM_1, abs(valA));
-	BSP_SetPinPWM(BSP_Pin_PWM_2, abs(valB));
-	BSP_SetPinPWM(BSP_Pin_PWM_3, abs(valC));
 
-	BSP_SetPinVal(BSP_Pin_POL_1, valA > 0);
-	BSP_SetPinVal(BSP_Pin_POL_2, valB > 0);
-	BSP_SetPinVal(BSP_Pin_POL_3, valC > 0);
+//	TIM_ClearFlag(TIM14, TIM_IT_Update);
+//	static uint8_t stepA = 0;
+//	static uint8_t stepB = stepsMax/2;
+//	static uint8_t stepC = 2*stepsMax/3;
+//	const int8_t valA = getVal(stepA++);
+//	const int8_t valB = getVal(stepB++);
+//	const int8_t valC = getVal(stepC++);
+//
+//	BSP_SetPinPWM(BSP_Pin_PWM_1, abs(valA));
+//	BSP_SetPinPWM(BSP_Pin_PWM_2, abs(valB));
+//	BSP_SetPinPWM(BSP_Pin_PWM_3, abs(valC));
+//
+//	BSP_SetPinVal(BSP_Pin_POL_1, valA > 0);
+//	BSP_SetPinVal(BSP_Pin_POL_2, valB > 0);
+//	BSP_SetPinVal(BSP_Pin_POL_3, valC > 0);
 }
 
-static void setSystemLed(_Bool state) {
-	BSP_SetPinVal(BSP_Pin_LED, state);
+static inline void setSystemLed(_Bool state) {
+	BSP_SetPinVal(BSP_Pin_LED, !state);
 }
 
 static void onAdcTimeout(uint32_t id, void *data) {
