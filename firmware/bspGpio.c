@@ -28,20 +28,20 @@ static const BspGpioConfig_t s_gpioConfig[] = {
 
 
 	[BSP_Pin_POL_1] = { GPIOA, { GPIO_Pin_10, GPIO_Mode_OUT,
-			GPIO_Speed_Level_1, GPIO_OType_PP,  GPIO_PuPd_NOPULL} },
+		GPIO_Speed_Level_1, GPIO_OType_PP,  GPIO_PuPd_NOPULL} },
 
 	[BSP_Pin_POL_2] = { GPIOA, { GPIO_Pin_9, GPIO_Mode_OUT,
-			GPIO_Speed_Level_1, GPIO_OType_PP,  GPIO_PuPd_NOPULL} },
+		GPIO_Speed_Level_1, GPIO_OType_PP,  GPIO_PuPd_NOPULL} },
 
 	[BSP_Pin_POL_3] = { GPIOA, { GPIO_Pin_5, GPIO_Mode_OUT,
-				GPIO_Speed_Level_1, GPIO_OType_PP,  GPIO_PuPd_NOPULL} },
+		GPIO_Speed_Level_1, GPIO_OType_PP,  GPIO_PuPd_NOPULL} },
 
 
-	[BSP_Pin_LED] = { GPIOA, { GPIO_Pin_5, GPIO_Mode_OUT,
-				GPIO_Speed_Level_1, GPIO_OType_PP,  GPIO_PuPd_NOPULL} },
+	[BSP_Pin_LED] = { GPIOA, { GPIO_Pin_4, GPIO_Mode_OUT,
+		GPIO_Speed_Level_1, GPIO_OType_PP,  GPIO_PuPd_NOPULL} },
 
 	[BSP_Pin_Adc] = { GPIOA, { GPIO_Pin_0, GPIO_Mode_IN,
-			GPIO_Speed_Level_1, GPIO_OType_PP,  GPIO_PuPd_NOPULL} },
+		GPIO_Speed_Level_1, GPIO_OType_PP,  GPIO_PuPd_NOPULL} },
 
 };
 

@@ -64,24 +64,15 @@ void BSP_FeedWatchdog(void) {
 
 void BSP_SetPinPWM(const BSP_Pin_t pin, const uint32_t value) {
 
-    TIM_OCInitTypeDef pwm = {
-		TIM_OCMode_PWM1,
-		TIM_OutputState_Enable,
-		0,
-		value,
-		TIM_OCPolarity_High,
-		0, 0, 0
-    };
-
 	switch (pin) {
 	case BSP_Pin_PWM_1:
-	    TIM_OC4Init(TIM3, &pwm);
+		TIM3->CCR4 = value;
 		break;
 	case BSP_Pin_PWM_2:
-	    TIM_OC2Init(TIM3, &pwm);
+		TIM3->CCR2 = value;
 		break;
 	case BSP_Pin_PWM_3:
-	    TIM_OC1Init(TIM3, &pwm);
+		TIM3->CCR1 = value;
 		break;
 	default:
 		return;
@@ -121,11 +112,11 @@ static void initialize_RCC(void) {
 }
 
 static void initWdt(void) {
-	IWDG_WriteAccessCmd(IWDG_WriteAccess_Enable);
-	IWDG_SetPrescaler(IWDG_Prescaler_32);
-	IWDG_SetReload(0x0FFF);
-	IWDG_ReloadCounter();
-	IWDG_Enable();
+//	IWDG_WriteAccessCmd(IWDG_WriteAccess_Enable);
+//	IWDG_SetPrescaler(IWDG_Prescaler_32);
+//	IWDG_SetReload(0x0FFF);
+//	IWDG_ReloadCounter();
+//	IWDG_Enable();
 }
 
 static void initADC(void) {
@@ -197,7 +188,7 @@ static void initPWM_OC(void) {
 }
 
 static void initSIN_TIM(void) {
-	BSP_SetSinBase(0);
+	BSP_SetSinBase(0xFF);
 	TIM_ITConfig(TIM14, TIM_IT_Update, ENABLE);
 	TIM_Cmd(TIM14, ENABLE);
 
@@ -219,48 +210,35 @@ static const uint8_t vals[] = {
 		-89, -80, -70, -59, -48, -36, -24, -12,
 };
 static const size_t stepsMax = sizeof(vals)/sizeof(*vals);
-static inline int8_t getVal(const size_t step) {
-	return vals[step%stepsMax];
+static inline int8_t getVal(size_t step) {
+	if (step >= stepsMax)
+		step -= stepsMax;
+	return vals[step];
 }
 
 void TIM14_IRQHandler(void) {
 
 	TIM_ClearFlag(TIM14, TIM_IT_Update);
+
 	static uint8_t step = 0;
-	const int8_t val = getVal(step++);
-	const uint8_t res = abs(val);
-	if (val > 0) {
-		BSP_SetPinVal(BSP_Pin_POL_1, 0);
-		BSP_SetPinVal(BSP_Pin_POL_2, 1);
-		BSP_SetPinPWM(BSP_Pin_PWM_2, res);
-		BSP_SetPinPWM(BSP_Pin_PWM_1, res);
-	} else {
-		BSP_SetPinVal(BSP_Pin_POL_1, 1);
-		BSP_SetPinVal(BSP_Pin_POL_2, 0);
-		BSP_SetPinPWM(BSP_Pin_PWM_2, res);
-		BSP_SetPinPWM(BSP_Pin_PWM_1, res);
-	}
 
+	const int8_t valA = getVal(++step);
+	const int8_t valB = getVal(step + stepsMax/3);
+	const int8_t valC = getVal(step + stepsMax/3 * 2);
+	if (step >= stepsMax)
+		step = 0;
 
-//	TIM_ClearFlag(TIM14, TIM_IT_Update);
-//	static uint8_t stepA = 0;
-//	static uint8_t stepB = stepsMax/2;
-//	static uint8_t stepC = 2*stepsMax/3;
-//	const int8_t valA = getVal(stepA++);
-//	const int8_t valB = getVal(stepB++);
-//	const int8_t valC = getVal(stepC++);
-//
-//	BSP_SetPinPWM(BSP_Pin_PWM_1, abs(valA));
-//	BSP_SetPinPWM(BSP_Pin_PWM_2, abs(valB));
-//	BSP_SetPinPWM(BSP_Pin_PWM_3, abs(valC));
-//
-//	BSP_SetPinVal(BSP_Pin_POL_1, valA > 0);
-//	BSP_SetPinVal(BSP_Pin_POL_2, valB > 0);
-//	BSP_SetPinVal(BSP_Pin_POL_3, valC > 0);
+	BSP_SetPinPWM(BSP_Pin_PWM_1, abs(valA));
+	BSP_SetPinPWM(BSP_Pin_PWM_2, abs(valB));
+	BSP_SetPinPWM(BSP_Pin_PWM_3, abs(valC));
+
+	BSP_SetPinVal(BSP_Pin_POL_1, valA > 0);
+	BSP_SetPinVal(BSP_Pin_POL_2, valB > 0);
+	BSP_SetPinVal(BSP_Pin_POL_3, valC > 0);
 }
 
 static inline void setSystemLed(_Bool state) {
-	BSP_SetPinVal(BSP_Pin_LED, !state);
+	BSP_SetPinVal(BSP_Pin_LED, state);
 }
 
 static void onAdcTimeout(uint32_t id, void *data) {
