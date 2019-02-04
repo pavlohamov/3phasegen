@@ -11,14 +11,10 @@
 extern "C" {
 #endif
 
-/* locks isr. Critical section entry. return isr state before call */
-int System_Lock(void);
-
-/* Unlocks isr. Critical section exit. accept isr state before crit section entry */
-void System_Unlock(int primask);
-
-/* Wait for interrupt/event */
+void System_Lock(void);
+void System_Unlock(void);
 void System_Poll(void);
+void System_Wakeup(void);
 
 #ifdef __cplusplus
 }

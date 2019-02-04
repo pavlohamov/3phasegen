@@ -16,9 +16,7 @@ int main(int argc, char* argv[]) {
 
 	Timer_init(onTimerPush);
 	BSP_Init();
-//	BSP_SetSinBase(7);
-	BSP_SetSinBase(30000);
-//	int val = 10000;
+	BSP_SetSinBase(6);
 	while (true) {
 		Event_t event;
 		EventQueue_Pend(&event);
@@ -26,8 +24,6 @@ int main(int argc, char* argv[]) {
 		uint32_t intVal = (uint32_t)event.data;
 		switch (event.type) {
 			case EVENT_SYSTICK:
-
-//				BSP_SetSinBase(val);
 				break;
 			case EVENT_TIMCALL:
 				Timer_onTimerCb(intVal);

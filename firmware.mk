@@ -48,16 +48,10 @@ CXXFLAGS += \
 	-fno-threadsafe-statics \
 
 LDFLAGS += \
+	-Wl,--wrap=malloc \
+	-Wl,--wrap=free \
 	-mcpu=cortex-m0 \
 	-mthumb \
-	-fmessage-length=0 \
-	-fsigned-char \
-	-ffunction-sections \
-	-fdata-sections \
-	-ffreestanding \
-	-fno-move-loop-invariants \
-	-Wall \
-	-Wextra \
 	-T mem.ld -T libs.ld -T sections.ld \
 	-nostartfiles \
 	-Xlinker --gc-sections \

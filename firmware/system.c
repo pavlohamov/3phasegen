@@ -6,21 +6,27 @@
  */
 
 #include "system.h"
-
 #include "stm32f0xx.h"
 
-int System_Lock(void) {
-	int primask = __get_PRIMASK();
-	__disable_irq();
-	return primask;
+
+static volatile int s_lock;
+
+void System_Lock(void) {
+    if (!s_lock++) {
+        __disable_irq();
+    }
 }
 
-void System_Unlock(int primask) {
-	if (!primask) {
-		__enable_irq();
-	}
+void System_Unlock(void) {
+    if (s_lock-- <= 1) {
+        __enable_irq();
+    }
 }
 
 void System_Poll(void) {
-    __WFI();
+    __WFE();
 }
+void System_Wakeup(void) {
+    __SEV();
+}
+

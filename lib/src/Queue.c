@@ -9,7 +9,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include "system.h"
-#include "memman.h"
 
 typedef struct Node {
 	struct Node *next;
@@ -18,65 +17,59 @@ typedef struct Node {
 
 struct {
 	Node_t *head;
+    Node_t *tail;
 } s_queue;
 
-static Node_t *newNode(EventTypes_e type, void *data, onEvtDispose_f dispose);
-static Node_t *getTail(Node_t *node);
+static inline Node_t *newNode(EventTypes_e type, void *data, onEvtDispose_f dispose) __attribute__((always_inline));
 
 void EventQueue_Push(EventTypes_e type, void *data, onEvtDispose_f dispose) {
-	int primask = System_Lock();
+    int wkup = 0;
+	System_Lock();
 	if (!s_queue.head) {
-		s_queue.head = newNode(type, data, dispose);
+		s_queue.head = s_queue.tail = newNode(type, data, dispose);
+		wkup = 1;
 	} else {
-		Node_t *tail = getTail(s_queue.head);
-		if (tail) {
-			Node_t *node = newNode(type, data, dispose);
-			if (node)
-				tail->next = node;
-		}
+	    s_queue.tail->next = newNode(type, data, dispose);
+	    s_queue.tail = s_queue.tail->next;
 	}
-	System_Unlock(primask);
+	System_Unlock();
+	if (wkup)
+	    System_Wakeup();
 }
 
-void EventQueue_Pend(Event_t *event) {
+_Bool EventQueue_Pend(Event_t *event) {
 	while (!s_queue.head)
 		System_Poll();
-	int primask = System_Lock();
+	System_Lock();
 	Node_t *node = s_queue.head;
 
 	event ?
 		*event = node->evt :
 		EventQueue_Dispose(&node->evt);
 	s_queue.head = node->next;
-	MEMMAN_free(node);
-	System_Unlock(primask);
+	if (!s_queue.head)
+	    s_queue.tail = NULL;
+	free(node);
+	System_Unlock();
+	return !s_queue.head;
 }
 
 void EventQueue_Dispose(Event_t *event) {
-	int primask = System_Lock();
 	if (event && event->dispose) {
 		event->dispose(event->data);
 		event->data = NULL;
 		event->dispose = NULL;
 	}
-	System_Unlock(primask);
 }
 
 static Node_t *newNode(EventTypes_e type, void *data, onEvtDispose_f dispose) {
-	Node_t *node = MEMMAN_malloc(sizeof(Node_t));
-	if (node) {
-		node->evt.type = type;
-		node->evt.data = data;
-		node->evt.dispose = dispose;
-		node->next = NULL;
-	}
+	Node_t *node = malloc(sizeof(Node_t));
+	if (!node)
+	    return NULL;
+    node->evt.type = type;
+    node->evt.data = data;
+    node->evt.dispose = dispose;
+    node->next = NULL;
 	return node;
 }
 
-static Node_t *getTail(Node_t *node) {
-	if (!node)
-		return NULL;
-	while (node->next)
-		node = node->next;
-	return node;
-}

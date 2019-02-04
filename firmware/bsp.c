@@ -33,7 +33,6 @@ static inline void initSIN_TIM(void);
 static void setSystemLed(_Bool state);
 
 static void onAdcTimeout(uint32_t id, void *data);
-static inline _Bool handleAdcITFlag(uint32_t flag);
 
 static uint32_t s_adcTimerId = INVALID_HANDLE;
 
@@ -49,11 +48,11 @@ _Bool BSP_Init(void) {
 	initPWM_OC();
 	initSIN_TIM();
 
-	BSP_SetPinPWM(BSP_Pin_PWM_2, 0);
-	BSP_SetPinPWM(BSP_Pin_PWM_1, 0);
-
-	BSP_SetPinVal(BSP_Pin_POL_1, 1);
-	BSP_SetPinVal(BSP_Pin_POL_2, 0);
+//	BSP_SetPinPWM(BSP_Pin_PWM_2, 0);
+//	BSP_SetPinPWM(BSP_Pin_PWM_1, 0);
+//
+//	BSP_SetPinVal(BSP_Pin_POL_1, 1);
+//	BSP_SetPinVal(BSP_Pin_POL_2, 0);
 
 	return true;
 }
@@ -66,10 +65,10 @@ void BSP_SetPinPWM(const BSP_Pin_t pin, const uint32_t value) {
 
 	switch (pin) {
 	case BSP_Pin_PWM_1:
-		TIM3->CCR4 = value;
+		TIM3->CCR2 = value;
 		break;
 	case BSP_Pin_PWM_2:
-		TIM3->CCR2 = value;
+		TIM3->CCR4 = value;
 		break;
 	case BSP_Pin_PWM_3:
 		TIM3->CCR1 = value;
@@ -82,9 +81,9 @@ void BSP_SetPinPWM(const BSP_Pin_t pin, const uint32_t value) {
 
 void BSP_SetSinBase(const uint32_t value) {
 	TIM_TimeBaseInitTypeDef iface = {
-			0x7 + value,
+			value,
 			TIM_CounterMode_Up,
-			0x7F,
+			0xFF,
 			TIM_CKD_DIV1,
 			0
 	};
@@ -148,24 +147,24 @@ static void initADC(void) {
 }
 
 static void initADC_NVIC(void) {
-	NVIC_InitTypeDef nvic = {
+	static const NVIC_InitTypeDef nvic = {
 			ADC1_IRQn,
 			0,
 			ENABLE
 	};
-	NVIC_Init(&nvic);
+	NVIC_Init((NVIC_InitTypeDef*)&nvic);
 }
 
 static void initPWM_TIM(void) {
-	TIM_TimeBaseInitTypeDef iface = {
-			0x0,
-			TIM_CounterMode_Up,
-			0x7F,
-			TIM_CKD_DIV1,
-			0
+	static const TIM_TimeBaseInitTypeDef iface = {
+		0x8F,
+		TIM_CounterMode_Up,
+		0x80,
+		TIM_CKD_DIV1,
+		0
 	};
 
-	TIM_TimeBaseInit(TIM3, &iface);
+	TIM_TimeBaseInit(TIM3, (TIM_TimeBaseInitTypeDef*)&iface);
 	TIM_Cmd(TIM3, ENABLE);
 }
 
@@ -192,27 +191,22 @@ static void initSIN_TIM(void) {
 	TIM_ITConfig(TIM14, TIM_IT_Update, ENABLE);
 	TIM_Cmd(TIM14, ENABLE);
 
-	NVIC_InitTypeDef nvic = {
-			TIM14_IRQn,
-			0,
-			ENABLE
+	static const NVIC_InitTypeDef nvic = {
+		TIM14_IRQn,
+		0,
+		ENABLE
 	};
-	NVIC_Init(&nvic);
+	NVIC_Init((NVIC_InitTypeDef*)&nvic);
 }
-static const uint8_t vals[] = {
-		0, 12, 24, 36, 48, 59, 70, 80,
-		89, 98, 105, 112, 117, 121, 124, 126,
-		127, 126, 124, 121, 117, 112, 105, 98,
-		89, 80, 70, 59, 48, 36, 24, 12,
-		0, -12, -24, -36, -48, -59, -70, -80,
-		-89, -98, -105, -112, -117, -121, -124, -126,
-		-127, -126, -124, -121, -117, -112, -105, -98,
-		-89, -80, -70, -59, -48, -36, -24, -12,
+static const int8_t vals[] = {
+		  0,  12,  24,  35,  47,  58,  68,  78,  87,  96, 103, 110, 115, 120, 123, 125, 127, 127, 125, 123, 120, 115,
+		110, 103,  96,  87,  78,  68,  58,  47,  35,  24,  12,   0, -12, -24, -35, -47, -58, -68, -78, -87, -96, -103,
+		-110, -115, -120, -123, -125, -127, -127, -125, -123, -120, -115, -110, -103, -96, -87, -78, -68, -58, -47, -35, -24, -12,
 };
 static const size_t stepsMax = sizeof(vals)/sizeof(*vals);
-static inline int8_t getVal(size_t step) {
+static inline int32_t getVal(size_t step) {
 	if (step >= stepsMax)
-		step -= stepsMax;
+		return(0);
 	return vals[step];
 }
 
@@ -220,21 +214,27 @@ void TIM14_IRQHandler(void) {
 
 	TIM_ClearFlag(TIM14, TIM_IT_Update);
 
-	static uint8_t step = 0;
+	static size_t stepA = 0;
+	static size_t stepB = sizeof(vals)/sizeof(*vals)/3;
+	static size_t stepC = 2*sizeof(vals)/sizeof(*vals)/3;
 
-	const int8_t valA = getVal(++step);
-	const int8_t valB = getVal(step + stepsMax/3);
-	const int8_t valC = getVal(step + stepsMax/3 * 2);
-	if (step >= stepsMax)
-		step = 0;
+	if (++stepA >= stepsMax)
+		stepA = 0;
+	if (++stepB >= stepsMax)
+		stepB = 0;
+	if (++stepC >= stepsMax)
+		stepC = 0;
+	const int32_t valA = getVal(stepA);
+	const int32_t valB = getVal(stepB);
+	const int32_t valC = getVal(stepC);
 
-	BSP_SetPinPWM(BSP_Pin_PWM_1, abs(valA));
+ 	BSP_SetPinPWM(BSP_Pin_PWM_1, abs(valA));
 	BSP_SetPinPWM(BSP_Pin_PWM_2, abs(valB));
 	BSP_SetPinPWM(BSP_Pin_PWM_3, abs(valC));
 
-	BSP_SetPinVal(BSP_Pin_POL_1, valA > 0);
-	BSP_SetPinVal(BSP_Pin_POL_2, valB > 0);
-	BSP_SetPinVal(BSP_Pin_POL_3, valC > 0);
+	BSP_SetPinVal(BSP_Pin_POL_1, valA >= 0);
+	BSP_SetPinVal(BSP_Pin_POL_2, valB >= 0);
+	BSP_SetPinVal(BSP_Pin_POL_3, valC >= 0);
 }
 
 static inline void setSystemLed(_Bool state) {
@@ -248,44 +248,29 @@ static void onAdcTimeout(uint32_t id, void *data) {
 }
 
 void ADC1_IRQHandler(void) {
-
-	static const uint32_t adcITFlags[] = {
-			ADC_IT_ADRDY,
-			ADC_IT_EOSMP,
-			ADC_IT_EOC,
-			ADC_IT_EOSEQ,
-			ADC_IT_OVR,
-			ADC_IT_AWD,
-	};
-	static const size_t adcITFlagsSize = sizeof(adcITFlags)/(sizeof(*adcITFlags));
-
-	for (size_t i = 0; i < adcITFlagsSize; i++)
-		if (ADC_GetITStatus(ADC1, adcITFlags[i]) && handleAdcITFlag(adcITFlags[i]))
-			ADC_ClearITPendingBit(ADC1, adcITFlags[i]);
-}
-
-static _Bool handleAdcITFlag(uint32_t flag) {
-	_Bool clear = true;
-	switch (flag) {
-		case ADC_IT_ADRDY: {
-			ADC_StartOfConversion(ADC1);
-		} break;
-		case ADC_IT_EOSMP: {
-		} break;
-		case ADC_IT_EOC: {
-			uint32_t val = ADC_GetConversionValue(ADC1);
-			EventQueue_Push(EVENT_ADC, (void*)val, NULL);
-			Timer_rearm(s_adcTimerId);
-		} break;
-		case ADC_IT_EOSEQ: {
-		} break;
-		case ADC_IT_OVR: {
-		} break;
-		case ADC_IT_AWD: {
-		} break;
-		default: {
-			clear = false;
-		} break;
+	if (ADC_GetITStatus(ADC1, ADC_IT_ADRDY)) {
+		ADC_StartOfConversion(ADC1);
+		ADC_ClearITPendingBit(ADC1, ADC_IT_ADRDY);
 	}
-	return clear;
+
+	if (ADC_GetITStatus(ADC1, ADC_IT_EOC)) {
+		uint32_t val = ADC_GetConversionValue(ADC1);
+		EventQueue_Push(EVENT_ADC, (void*)val, NULL);
+		Timer_rearm(s_adcTimerId);
+		ADC_ClearITPendingBit(ADC1, ADC_IT_EOC);
+	}
+
+//	if (ADC_GetITStatus(ADC1, ADC_IT_EOSMP)) {
+//		ADC_ClearITPendingBit(ADC1, ADC_IT_EOSMP);
+//	}
+//	if (ADC_GetITStatus(ADC1, ADC_IT_EOSEQ)) {
+//		ADC_ClearITPendingBit(ADC1, ADC_IT_EOSEQ);
+//	}
+//	if (ADC_GetITStatus(ADC1, ADC_IT_OVR)) {
+//		ADC_ClearITPendingBit(ADC1, ADC_IT_OVR);
+//	}
+//	if (ADC_GetITStatus(ADC1, ADC_IT_AWD)) {
+//		ADC_ClearITPendingBit(ADC1, ADC_IT_AWD);
+//	}
 }
+
