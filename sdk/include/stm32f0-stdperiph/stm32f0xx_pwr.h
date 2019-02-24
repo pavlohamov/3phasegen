@@ -2,8 +2,8 @@
   ******************************************************************************
   * @file    stm32f0xx_pwr.h
   * @author  MCD Application Team
-  * @version V1.3.0
-  * @date    16-January-2014
+  * @version V1.5.0
+  * @date    05-December-2014
   * @brief   This file contains all the functions prototypes for the PWR firmware 
   *          library.
   ******************************************************************************
@@ -35,7 +35,7 @@
 #endif
 
 /* Includes ------------------------------------------------------------------*/
-#include "../../../sdk/include/cmsis/stm32f0xx.h"
+#include "stm32f0xx.h"
 
 /** @addtogroup STM32F0xx_StdPeriph_Driver
   * @{

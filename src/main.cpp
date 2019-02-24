@@ -16,7 +16,7 @@ int main(int argc, char* argv[]) {
 
 	Timer_init(onTimerPush);
 	BSP_Init();
-	BSP_SetSinBase(6);
+//	BSP_SetSinBase(6);
 	while (true) {
 		Event_t event;
 		EventQueue_Pend(&event);

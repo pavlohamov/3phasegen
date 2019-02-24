@@ -30,9 +30,11 @@ SRC += \
 
 CFLAGS += \
 	-I./firmware/ \
+	-DTRACE \
+	-DOS_USE_TRACE_SEMIHOSTING_STDOUT \
 
 CFLAGS += \
-	-Og \
+	-O0 \
 	-ggdb \
 	-mcpu=cortex-m0 \
 	-mthumb -mabi=aapcs \

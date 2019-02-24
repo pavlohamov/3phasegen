@@ -168,8 +168,8 @@
 
 #endif
 
-#include "../../../sdk/include/cmsis/core_cmInstr.h"                /* Core Instruction Access */
-#include "../../../sdk/include/cmsis/core_cmFunc.h"                 /* Core Function Access */
+#include "core_cmInstr.h"                /* Core Instruction Access */
+#include "core_cmFunc.h"                 /* Core Function Access */
 
 #ifdef __cplusplus
 }

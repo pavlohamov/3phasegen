@@ -1,8 +1,29 @@
-//
-// This file is part of the µOS++ III distribution.
-// Parts of this file are from the newlib sources, issued under GPL.
-// Copyright (c) 2014 Liviu Ionescu
-//
+/*
+ * This file is part of the µOS++ distribution.
+ *   (https://github.com/micro-os-plus)
+ * Copyright (c) 2014 Liviu Ionescu.
+ *
+ * Permission is hereby granted, free of charge, to any person
+ * obtaining a copy of this software and associated documentation
+ * files (the "Software"), to deal in the Software without
+ * restriction, including without limitation the rights to use,
+ * copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Software, and to permit persons to whom
+ * the Software is furnished to do so, subject to the following
+ * conditions:
+ *
+ * The above copyright notice and this permission notice shall be
+ * included in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+ * OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+ * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+ * HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+ * WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+ * OTHER DEALINGS IN THE SOFTWARE.
+ */
 
 // ----------------------------------------------------------------------------
 
@@ -61,7 +82,7 @@ __initialize_args(int* p_argc, char*** p_argv)
 // If you detect other functions to be needed, just let us know
 // and we'll add them.
 
-int
+__attribute__((weak)) int
 raise(int sig __attribute__((unused)))
 {
   errno = ENOSYS;
@@ -71,7 +92,7 @@ raise(int sig __attribute__((unused)))
 int
 kill(pid_t pid, int sig);
 
-int
+__attribute__((weak)) int
 kill(pid_t pid __attribute__((unused)), int sig __attribute__((unused)))
 {
   errno = ENOSYS;
@@ -571,7 +592,7 @@ newslot (void);
 register char* stack_ptr asm ("sp");
 
 /* following is copied from libc/stdio/local.h to check std streams */
-extern void _EXFUN(__sinit,(struct _reent*));
+extern void __sinit(struct _reent*);
 #define CHECK_INIT(ptr) \
   do                                            \
     {                                           \

@@ -10,6 +10,7 @@
 #include "systemTimer.h"
 #include "Queue.h"
 #include "timers.h"
+#include "Trace.h"
 
 #include "stm32f0xx_rcc.h"
 #include "stm32f0xx_gpio.h"
@@ -157,7 +158,8 @@ static void initADC_NVIC(void) {
 
 static void initPWM_TIM(void) {
 	static const TIM_TimeBaseInitTypeDef iface = {
-		0x8F,
+//		0x8F,
+		0x1FF,
 		TIM_CounterMode_Up,
 		0x80,
 		TIM_CKD_DIV1,
@@ -187,7 +189,7 @@ static void initPWM_OC(void) {
 }
 
 static void initSIN_TIM(void) {
-	BSP_SetSinBase(0xFF);
+	BSP_SetSinBase(0xFFFF);
 	TIM_ITConfig(TIM14, TIM_IT_Update, ENABLE);
 	TIM_Cmd(TIM14, ENABLE);
 
@@ -199,9 +201,9 @@ static void initSIN_TIM(void) {
 	NVIC_Init((NVIC_InitTypeDef*)&nvic);
 }
 static const int8_t vals[] = {
-		  0,  12,  24,  35,  47,  58,  68,  78,  87,  96, 103, 110, 115, 120, 123, 125, 127, 127, 125, 123, 120, 115,
-		110, 103,  96,  87,  78,  68,  58,  47,  35,  24,  12,   0, -12, -24, -35, -47, -58, -68, -78, -87, -96, -103,
-		-110, -115, -120, -123, -125, -127, -127, -125, -123, -120, -115, -110, -103, -96, -87, -78, -68, -58, -47, -35, -24, -12,
+		   0,   12,   24,   35,   47,   58,   68,   78,   87,   96,  103,  110,  115,  120,  123, 125, 127, 127, 125, 123, 120, 115,
+		 110,  103,   96,   87,   78,   68,   58,   47,   35,   24,   12,    0,  -12,  -24,  -35, -47, -58, -68, -78, -87, -96, -103,
+		-110, -115, -120, -123, -125, -127, -127, -125, -123, -120, -115, -110,  -103, -96,  -87, -78, -68, -58, -47, -35, -24, -12,
 };
 static const size_t stepsMax = sizeof(vals)/sizeof(*vals);
 static inline int32_t getVal(size_t step) {
@@ -218,23 +220,26 @@ void TIM14_IRQHandler(void) {
 	static size_t stepB = sizeof(vals)/sizeof(*vals)/3;
 	static size_t stepC = 2*sizeof(vals)/sizeof(*vals)/3;
 
+	const int32_t valA = getVal(stepA);
+	const int32_t valB = getVal(stepB);
+	const int32_t valC = getVal(stepC);
+
+	trace_printf("op\n");
+
+ 	BSP_SetPinPWM(BSP_Pin_PWM_1, abs(valA));
+	BSP_SetPinPWM(BSP_Pin_PWM_2, abs(valB));
+	BSP_SetPinPWM(BSP_Pin_PWM_3, abs(valC));
+
+	BSP_SetPinVal(BSP_Pin_POL_1, valA > 0);
+	BSP_SetPinVal(BSP_Pin_POL_2, valB > 0);
+	BSP_SetPinVal(BSP_Pin_POL_3, valC > 0);
+
 	if (++stepA >= stepsMax)
 		stepA = 0;
 	if (++stepB >= stepsMax)
 		stepB = 0;
 	if (++stepC >= stepsMax)
 		stepC = 0;
-	const int32_t valA = getVal(stepA);
-	const int32_t valB = getVal(stepB);
-	const int32_t valC = getVal(stepC);
-
- 	BSP_SetPinPWM(BSP_Pin_PWM_1, abs(valA));
-	BSP_SetPinPWM(BSP_Pin_PWM_2, abs(valB));
-	BSP_SetPinPWM(BSP_Pin_PWM_3, abs(valC));
-
-	BSP_SetPinVal(BSP_Pin_POL_1, valA >= 0);
-	BSP_SetPinVal(BSP_Pin_POL_2, valB >= 0);
-	BSP_SetPinVal(BSP_Pin_POL_3, valC >= 0);
 }
 
 static inline void setSystemLed(_Bool state) {
