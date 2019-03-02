@@ -41,7 +41,7 @@ void BSP_FeedWatchdog(void);
 void BSP_SetPinVal(const BSP_Pin_t pin, const _Bool state);
 _Bool BSP_GetPinVal(const BSP_Pin_t pin);
 
-void BSP_SetPinPWM(const BSP_Pin_t pin, const uint32_t value);
+void BSP_SetPinPWM(const BSP_Pin_t pin, int32_t value);
 void BSP_SetSinBase(const uint32_t value);
 
 #ifdef __cplusplus

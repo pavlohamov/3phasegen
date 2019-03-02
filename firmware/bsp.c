@@ -49,11 +49,13 @@ _Bool BSP_Init(void) {
 	initPWM_OC();
 	initSIN_TIM();
 
-//	BSP_SetPinPWM(BSP_Pin_PWM_2, 0);
-//	BSP_SetPinPWM(BSP_Pin_PWM_1, 0);
-//
-//	BSP_SetPinVal(BSP_Pin_POL_1, 1);
-//	BSP_SetPinVal(BSP_Pin_POL_2, 0);
+    BSP_SetPinPWM(BSP_Pin_PWM_1, 0x7F);
+	BSP_SetPinPWM(BSP_Pin_PWM_2, 0x7F);
+    BSP_SetPinPWM(BSP_Pin_PWM_3, 0x7F);
+
+    BSP_SetPinVal(BSP_Pin_POL_1, 0);
+    BSP_SetPinVal(BSP_Pin_POL_2, 0);
+    BSP_SetPinVal(BSP_Pin_POL_3, 0);
 
 	return true;
 }
@@ -62,8 +64,9 @@ void BSP_FeedWatchdog(void) {
 	IWDG_ReloadCounter();
 }
 
-void BSP_SetPinPWM(const BSP_Pin_t pin, const uint32_t value) {
+void BSP_SetPinPWM(const BSP_Pin_t pin, int32_t value) {
 
+    value = abs(value);
 	switch (pin) {
 	case BSP_Pin_PWM_1:
 		TIM3->CCR2 = value;
@@ -82,33 +85,30 @@ void BSP_SetPinPWM(const BSP_Pin_t pin, const uint32_t value) {
 
 void BSP_SetSinBase(const uint32_t value) {
 	TIM_TimeBaseInitTypeDef iface = {
-			value,
-			TIM_CounterMode_Up,
-			0xFF,
-			TIM_CKD_DIV1,
-			0
+        value,
+        TIM_CounterMode_Up,
+        0xFF,
+        TIM_CKD_DIV1,
+        0
 	};
 
 	TIM_TimeBaseInit(TIM14, &iface);
 }
 
 static void initialize_RCC(void) {
-
 	RCC_HSEConfig(RCC_HSE_OFF);
 	RCC_WaitForHSEStartUp(); // really we wait for shutdown
 	RCC_ADCCLKConfig(RCC_ADCCLK_PCLK_Div4);
 
-	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_GPIOA, ENABLE);
-	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_GPIOB, ENABLE);
-	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_GPIOF, ENABLE);
+	RCC->AHBENR |= RCC_AHBPeriph_GPIOA | RCC_AHBPeriph_GPIOB | RCC_AHBPeriph_GPIOF;
+	RCC->APB2ENR |= RCC_APB2Periph_ADC1;
+	RCC->APB1ENR |= RCC_APB1Periph_TIM3 | RCC_APB1Periph_TIM14;
 
-	RCC_APB2PeriphClockCmd(RCC_APB2Periph_ADC1, ENABLE);
-	RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM3, ENABLE);
-	RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM14, ENABLE);
+	RCC->AHBRSTR |= RCC_AHBPeriph_GPIOA | RCC_AHBPeriph_GPIOB | RCC_AHBPeriph_GPIOF;
+    RCC->AHBRSTR &= ~(RCC_AHBPeriph_GPIOA | RCC_AHBPeriph_GPIOB | RCC_AHBPeriph_GPIOF);
 
-	GPIO_DeInit(GPIOA);
-	GPIO_DeInit(GPIOB);
-	GPIO_DeInit(GPIOF);
+    RCC->APB2RSTR |= RCC_APB2Periph_ADC1;
+    RCC->APB2RSTR &= ~RCC_APB2Periph_ADC1;
 }
 
 static void initWdt(void) {
@@ -129,7 +129,6 @@ static void initADC(void) {
 		ADC_ScanDirection_Upward
 	};
 
-	ADC_DeInit(ADC1);
 	ADC_Init(ADC1, (ADC_InitTypeDef*)&iface);
 	ADC_ClockModeConfig(ADC1, ADC_ClockMode_SynClkDiv4);
 	ADC_ChannelConfig(ADC1, ADC_Channel_0, ADC_SampleTime_239_5Cycles);
@@ -138,8 +137,7 @@ static void initADC(void) {
 	ADC_ContinuousModeCmd(ADC1, DISABLE);
 	ADC_DiscModeCmd(ADC1, ENABLE);
 
-	ADC_ITConfig(ADC1, ADC_IT_ADRDY, ENABLE);
-	ADC_ITConfig(ADC1, ADC_IT_EOC, ENABLE);
+	ADC_ITConfig(ADC1, ADC_IT_ADRDY | ADC_IT_EOC, ENABLE);
 
 	ADC_GetCalibrationFactor(ADC1);
 	ADC_Cmd(ADC1, ENABLE);
@@ -149,19 +147,19 @@ static void initADC(void) {
 
 static void initADC_NVIC(void) {
 	static const NVIC_InitTypeDef nvic = {
-			ADC1_IRQn,
-			0,
-			ENABLE
+        ADC1_IRQn,
+        0,
+        ENABLE
 	};
 	NVIC_Init((NVIC_InitTypeDef*)&nvic);
 }
 
 static void initPWM_TIM(void) {
 	static const TIM_TimeBaseInitTypeDef iface = {
-//		0x8F,
-		0x1FF,
+		0x8F,
+//		0x1FF,
 		TIM_CounterMode_Up,
-		0x80,
+		0xFF,
 		TIM_CKD_DIV1,
 		0
 	};
@@ -172,24 +170,26 @@ static void initPWM_TIM(void) {
 
 static void initPWM_OC(void) {
 
-    TIM_OCInitTypeDef pwm = {
-		TIM_OCMode_PWM1,
+    static const TIM_OCInitTypeDef pwm = {
+        TIM_OCMode_PWM1,
 		TIM_OutputState_Enable,
-		0,
+		TIM_OutputNState_Enable,
 		0,
 		TIM_OCPolarity_High,
-		0, 0, 0
+		TIM_OCNPolarity_Low,
+		TIM_OCIdleState_Set,
+		TIM_OCNIdleState_Reset
     };
-    TIM_OC1Init(TIM3, &pwm);
-    TIM_OC2Init(TIM3, &pwm);
-    TIM_OC4Init(TIM3, &pwm);
-    TIM_CCxCmd(TIM3, TIM_Channel_1, TIM_CCx_Enable);
-    TIM_CCxCmd(TIM3, TIM_Channel_2, TIM_CCx_Enable);
-    TIM_CCxCmd(TIM3, TIM_Channel_4, TIM_CCx_Enable);
+    TIM_OC1Init(TIM3, (TIM_OCInitTypeDef*)&pwm);
+    TIM_OC2Init(TIM3, (TIM_OCInitTypeDef*)&pwm);
+    TIM_OC4Init(TIM3, (TIM_OCInitTypeDef*)&pwm);
+
+    TIM3->CCER |= (TIM_CCx_Enable << TIM_Channel_1) | (TIM_CCx_Enable << TIM_Channel_2) | (TIM_CCx_Enable << TIM_Channel_4);
 }
 
 static void initSIN_TIM(void) {
-	BSP_SetSinBase(0xFFFF);
+//	BSP_SetSinBase(0x7FFF);
+    BSP_SetSinBase(0xFFF);
 	TIM_ITConfig(TIM14, TIM_IT_Update, ENABLE);
 	TIM_Cmd(TIM14, ENABLE);
 
@@ -200,46 +200,55 @@ static void initSIN_TIM(void) {
 	};
 	NVIC_Init((NVIC_InitTypeDef*)&nvic);
 }
-static const int8_t vals[] = {
-		   0,   12,   24,   35,   47,   58,   68,   78,   87,   96,  103,  110,  115,  120,  123, 125, 127, 127, 125, 123, 120, 115,
-		 110,  103,   96,   87,   78,   68,   58,   47,   35,   24,   12,    0,  -12,  -24,  -35, -47, -58, -68, -78, -87, -96, -103,
-		-110, -115, -120, -123, -125, -127, -127, -125, -123, -120, -115, -110,  -103, -96,  -87, -78, -68, -58, -47, -35, -24, -12,
+static const int8_t phaseA[] = {
+        1, 6, 12, 19, 25, 31, 37, 43, 49, 54, 60, 65, 71, 76, 81, 85, 90, 94, 98, 102, 106, 109, 112, 115, 117, 120, 122, 123, 125, 126, 126,
+        127, 127, 127, 126, 126, 125, 123, 122, 120, 117, 115, 112, 109, 106, 102, 98, 94, 90, 85, 81, 76, 71, 65, 60, 54, 49, 43, 37, 31, 25, 19,
+        12, 6, 1, -6, -12, -19, -25, -31, -37, -43, -49, -54, -60, -65, -71, -76, -81, -85, -90, -94, -98, -102, -106, -109, -112, -115, -117, -120, -122, -123, -125,
+        -126, -126, -127, -127, -127, -126, -126, -125, -123, -122, -120, -117, -115, -112, -109, -106, -102, -98, -94, -90, -85, -81, -76, -71, -65, -60, -54, -49, -43, -37, -31,
+        -25, -19, -12, -6,
+
+
 };
-static const size_t stepsMax = sizeof(vals)/sizeof(*vals);
-static inline int32_t getVal(size_t step) {
-	if (step >= stepsMax)
-		return(0);
-	return vals[step];
-}
+static const int8_t phaseB[] = {
+        110, 107, 103, 99, 95, 91, 87, 82, 77, 72, 67, 62, 56, 51, 45, 39, 33, 27, 21, 15, 8, 2, -4, -10, -17, -23, -29, -35, -41, -47, -52,
+        -58, -63, -69, -74, -79, -84, -88, -93, -97, -101, -104, -108, -111, -114, -117, -119, -121, -123, -124, -125, -126, -127, -127, -127, -127, -126, -125, -124, -122, -120, -118,
+        -116, -113, -110, -107, -103, -99, -95, -91, -87, -82, -77, -72, -67, -62, -56, -51, -45, -39, -33, -27, -21, -15, -8, -2, 4, 10, 17, 23, 29, 35, 41,
+        47, 52, 58, 63, 69, 74, 79, 84, 88, 93, 97, 101, 104, 108, 111, 114, 117, 119, 121, 123, 124, 125, 126, 127, 127, 127, 127, 126, 125, 124, 122,
+        120, 118, 116, 113,
+
+};
+static const int8_t phaseC[] = {
+        -110, -113, -116, -118, -120, -122, -124, -125, -126, -127, -127, -127, -127, -126, -125, -124, -123, -121, -119, -117, -114, -111, -108, -104, -101, -97, -93, -88, -84, -79, -74,
+        -69, -64, -58, -52, -47, -41, -35, -29, -23, -17, -10, -4, 2, 8, 15, 21, 27, 33, 39, 45, 51, 56, 62, 67, 72, 77, 82, 87, 91, 95, 99,
+        103, 107, 110, 113, 116, 118, 120, 122, 124, 125, 126, 127, 127, 127, 127, 126, 125, 124, 123, 121, 119, 117, 114, 111, 108, 104, 101, 97, 93, 88, 84,
+        79, 74, 69, 64, 58, 52, 47, 41, 35, 29, 23, 17, 10, 4, -2, -8, -15, -21, -27, -33, -39, -45, -51, -56, -62, -67, -72, -77, -82, -87, -91,
+        -95, -99, -103, -107,
+
+};
+static const size_t stepsMax = sizeof(phaseA)/sizeof(*phaseA);
 
 void TIM14_IRQHandler(void) {
-
 	TIM_ClearFlag(TIM14, TIM_IT_Update);
 
-	static size_t stepA = 0;
-	static size_t stepB = sizeof(vals)/sizeof(*vals)/3;
-	static size_t stepC = 2*sizeof(vals)/sizeof(*vals)/3;
+	static size_t step = 0;
 
-	const int32_t valA = getVal(stepA);
-	const int32_t valB = getVal(stepB);
-	const int32_t valC = getVal(stepC);
+    const int32_t valA = phaseA[step];
+    const int32_t valB = phaseB[step];
+    const int32_t valC = phaseC[step];
 
-	trace_printf("op\n");
+//    if (!valA || !valB || !valC)
+//        trace_printf("%d %d %d\n", valA, valB, valC);
 
- 	BSP_SetPinPWM(BSP_Pin_PWM_1, abs(valA));
-	BSP_SetPinPWM(BSP_Pin_PWM_2, abs(valB));
-	BSP_SetPinPWM(BSP_Pin_PWM_3, abs(valC));
+    BSP_SetPinPWM(BSP_Pin_PWM_1, valA);
+    BSP_SetPinPWM(BSP_Pin_PWM_2, valB);
+    BSP_SetPinPWM(BSP_Pin_PWM_3, valC);
 
-	BSP_SetPinVal(BSP_Pin_POL_1, valA > 0);
-	BSP_SetPinVal(BSP_Pin_POL_2, valB > 0);
-	BSP_SetPinVal(BSP_Pin_POL_3, valC > 0);
+    BSP_SetPinVal(BSP_Pin_POL_1, valA > 0);
+    BSP_SetPinVal(BSP_Pin_POL_2, valB > 0);
+    BSP_SetPinVal(BSP_Pin_POL_3, valC > 0);
 
-	if (++stepA >= stepsMax)
-		stepA = 0;
-	if (++stepB >= stepsMax)
-		stepB = 0;
-	if (++stepC >= stepsMax)
-		stepC = 0;
+	if (++step >= stepsMax)
+	    step = 0;
 }
 
 static inline void setSystemLed(_Bool state) {
@@ -264,18 +273,5 @@ void ADC1_IRQHandler(void) {
 		Timer_rearm(s_adcTimerId);
 		ADC_ClearITPendingBit(ADC1, ADC_IT_EOC);
 	}
-
-//	if (ADC_GetITStatus(ADC1, ADC_IT_EOSMP)) {
-//		ADC_ClearITPendingBit(ADC1, ADC_IT_EOSMP);
-//	}
-//	if (ADC_GetITStatus(ADC1, ADC_IT_EOSEQ)) {
-//		ADC_ClearITPendingBit(ADC1, ADC_IT_EOSEQ);
-//	}
-//	if (ADC_GetITStatus(ADC1, ADC_IT_OVR)) {
-//		ADC_ClearITPendingBit(ADC1, ADC_IT_OVR);
-//	}
-//	if (ADC_GetITStatus(ADC1, ADC_IT_AWD)) {
-//		ADC_ClearITPendingBit(ADC1, ADC_IT_AWD);
-//	}
 }
 

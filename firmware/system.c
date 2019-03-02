@@ -8,7 +8,6 @@
 #include "system.h"
 #include "stm32f0xx.h"
 
-
 static volatile int s_lock;
 
 void System_Lock(void) {

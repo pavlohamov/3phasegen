@@ -71,6 +71,7 @@ void BSP_SetPinVal(const BSP_Pin_t pin, const _Bool state) {
 _Bool BSP_GetPinVal(const BSP_Pin_t pin) {
 	if (pin > BSP_Pin_Last)
 		return false;
-	return GPIO_ReadInputDataBit((GPIO_TypeDef*)s_gpioConfig[pin].port, s_gpioConfig[pin].setting.GPIO_Pin);
+	return !(s_gpioConfig[pin].port->IDR & s_gpioConfig[pin].setting.GPIO_Pin);
+//	return GPIO_ReadInputDataBit((GPIO_TypeDef*)s_gpioConfig[pin].port, s_gpioConfig[pin].setting.GPIO_Pin);
 }
 

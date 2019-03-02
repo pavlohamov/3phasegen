@@ -37,11 +37,13 @@ CFLAGS += \
 	-O0 \
 	-ggdb \
 	-mcpu=cortex-m0 \
-	-mthumb -mabi=aapcs \
-	-mfloat-abi=soft \
-	-fabi-version=0 \
+	-mthumb \
 	-ffunction-sections \
 	-fdata-sections \
+	-fmessage-length=0 \
+	-fsigned-char \
+	-ffreestanding \
+	-fno-move-loop-invariants \
 
 CXXFLAGS += \
 	-fno-exceptions \
