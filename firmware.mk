@@ -34,7 +34,7 @@ CFLAGS += \
 	-DOS_USE_TRACE_SEMIHOSTING_STDOUT \
 
 CFLAGS += \
-	-O0 \
+	-Og \
 	-ggdb \
 	-mcpu=cortex-m0 \
 	-mthumb \

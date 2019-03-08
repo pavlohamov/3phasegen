@@ -20,6 +20,7 @@
 
 #include <stddef.h>
 #include <stdlib.h>
+#include <math.h>
 
 #define ADC_TIMEOUT (BSP_TICKS_PER_SECOND/50)
 
@@ -30,6 +31,7 @@ static inline void initADC_NVIC(void);
 static inline void initPWM_TIM(void);
 static inline void initPWM_OC(void);
 static inline void initSIN_TIM(void);
+static inline void setPwm(const BSP_Pin_t pin, int32_t value);
 
 static void setSystemLed(_Bool state);
 
@@ -49,38 +51,20 @@ _Bool BSP_Init(void) {
 	initPWM_OC();
 	initSIN_TIM();
 
-    BSP_SetPinPWM(BSP_Pin_PWM_1, 0x7F);
-	BSP_SetPinPWM(BSP_Pin_PWM_2, 0x7F);
-    BSP_SetPinPWM(BSP_Pin_PWM_3, 0x7F);
+    setPwm(BSP_Pin_PWM_1, 0x7E);
+	setPwm(BSP_Pin_PWM_2, 0x7E);
+    setPwm(BSP_Pin_PWM_3, 0x7E);
 
     BSP_SetPinVal(BSP_Pin_POL_1, 0);
     BSP_SetPinVal(BSP_Pin_POL_2, 0);
     BSP_SetPinVal(BSP_Pin_POL_3, 0);
 
+//	BSP_SetSinBase(0x7FFF);
 	return true;
 }
 
 void BSP_FeedWatchdog(void) {
 	IWDG_ReloadCounter();
-}
-
-void BSP_SetPinPWM(const BSP_Pin_t pin, int32_t value) {
-
-    value = abs(value);
-	switch (pin) {
-	case BSP_Pin_PWM_1:
-		TIM3->CCR2 = value;
-		break;
-	case BSP_Pin_PWM_2:
-		TIM3->CCR4 = value;
-		break;
-	case BSP_Pin_PWM_3:
-		TIM3->CCR1 = value;
-		break;
-	default:
-		return;
-		break;
-	}
 }
 
 void BSP_SetSinBase(const uint32_t value) {
@@ -92,7 +76,10 @@ void BSP_SetSinBase(const uint32_t value) {
         0
 	};
 
+	TIM_Cmd(TIM14, DISABLE);
 	TIM_TimeBaseInit(TIM14, &iface);
+	TIM_ITConfig(TIM14, TIM_IT_Update, ENABLE);
+	TIM_Cmd(TIM14, ENABLE);
 }
 
 static void initialize_RCC(void) {
@@ -156,10 +143,9 @@ static void initADC_NVIC(void) {
 
 static void initPWM_TIM(void) {
 	static const TIM_TimeBaseInitTypeDef iface = {
-		0x8F,
-//		0x1FF,
+		0x07,
 		TIM_CounterMode_Up,
-		0xFF,
+		0x7E,
 		TIM_CKD_DIV1,
 		0
 	};
@@ -187,12 +173,28 @@ static void initPWM_OC(void) {
     TIM3->CCER |= (TIM_CCx_Enable << TIM_Channel_1) | (TIM_CCx_Enable << TIM_Channel_2) | (TIM_CCx_Enable << TIM_Channel_4);
 }
 
-static void initSIN_TIM(void) {
-//	BSP_SetSinBase(0x7FFF);
-    BSP_SetSinBase(0xFFF);
-	TIM_ITConfig(TIM14, TIM_IT_Update, ENABLE);
-	TIM_Cmd(TIM14, ENABLE);
+static inline void setPwm(const BSP_Pin_t pin, int32_t value) {
 
+    if (value < 0) {
+    	value = -value;
+    }
+	switch (pin) {
+	case BSP_Pin_PWM_1:
+		TIM3->CCR2 = value;
+		break;
+	case BSP_Pin_PWM_2:
+		TIM3->CCR4 = value;
+		break;
+	case BSP_Pin_PWM_3:
+		TIM3->CCR1 = value;
+		break;
+	default:
+		return;
+		break;
+	}
+}
+
+static void initSIN_TIM(void) {
 	static const NVIC_InitTypeDef nvic = {
 		TIM14_IRQn,
 		0,
@@ -200,35 +202,20 @@ static void initSIN_TIM(void) {
 	};
 	NVIC_Init((NVIC_InitTypeDef*)&nvic);
 }
+
 static const int8_t phaseA[] = {
-        1, 6, 12, 19, 25, 31, 37, 43, 49, 54, 60, 65, 71, 76, 81, 85, 90, 94, 98, 102, 106, 109, 112, 115, 117, 120, 122, 123, 125, 126, 126,
-        127, 127, 127, 126, 126, 125, 123, 122, 120, 117, 115, 112, 109, 106, 102, 98, 94, 90, 85, 81, 76, 71, 65, 60, 54, 49, 43, 37, 31, 25, 19,
-        12, 6, 1, -6, -12, -19, -25, -31, -37, -43, -49, -54, -60, -65, -71, -76, -81, -85, -90, -94, -98, -102, -106, -109, -112, -115, -117, -120, -122, -123, -125,
-        -126, -126, -127, -127, -127, -126, -126, -125, -123, -122, -120, -117, -115, -112, -109, -106, -102, -98, -94, -90, -85, -81, -76, -71, -65, -60, -54, -49, -43, -37, -31,
-        -25, -19, -12, -6,
-
-
+	0, 39, 75, 103, 121, 127, 121, 103, 75, 39, 0, -39, -75, -103, -121, -127, -121, -103, -75, -39,
 };
 static const int8_t phaseB[] = {
-        110, 107, 103, 99, 95, 91, 87, 82, 77, 72, 67, 62, 56, 51, 45, 39, 33, 27, 21, 15, 8, 2, -4, -10, -17, -23, -29, -35, -41, -47, -52,
-        -58, -63, -69, -74, -79, -84, -88, -93, -97, -101, -104, -108, -111, -114, -117, -119, -121, -123, -124, -125, -126, -127, -127, -127, -127, -126, -125, -124, -122, -120, -118,
-        -116, -113, -110, -107, -103, -99, -95, -91, -87, -82, -77, -72, -67, -62, -56, -51, -45, -39, -33, -27, -21, -15, -8, -2, 4, 10, 17, 23, 29, 35, 41,
-        47, 52, 58, 63, 69, 74, 79, 84, 88, 93, 97, 101, 104, 108, 111, 114, 117, 119, 121, 123, 124, 125, 126, 127, 127, 127, 127, 126, 125, 124, 122,
-        120, 118, 116, 113,
-
+	110, 85, 52, 13, -26, -64, -94, -116, -126, -124, -110, -85, -52, -13, 26, 63, 94, 116, 126, 124,
 };
 static const int8_t phaseC[] = {
-        -110, -113, -116, -118, -120, -122, -124, -125, -126, -127, -127, -127, -127, -126, -125, -124, -123, -121, -119, -117, -114, -111, -108, -104, -101, -97, -93, -88, -84, -79, -74,
-        -69, -64, -58, -52, -47, -41, -35, -29, -23, -17, -10, -4, 2, 8, 15, 21, 27, 33, 39, 45, 51, 56, 62, 67, 72, 77, 82, 87, 91, 95, 99,
-        103, 107, 110, 113, 116, 118, 120, 122, 124, 125, 126, 127, 127, 127, 127, 126, 125, 124, 123, 121, 119, 117, 114, 111, 108, 104, 101, 97, 93, 88, 84,
-        79, 74, 69, 64, 58, 52, 47, 41, 35, 29, 23, 17, 10, 4, -2, -8, -15, -21, -27, -33, -39, -45, -51, -56, -62, -67, -72, -77, -82, -87, -91,
-        -95, -99, -103, -107,
+	-110, -124, -126, -116, -94, -64, -26, 13, 52, 85, 110, 124, 126, 116, 94, 63, 26, -13, -52, -85,
 
 };
 static const size_t stepsMax = sizeof(phaseA)/sizeof(*phaseA);
 
 void TIM14_IRQHandler(void) {
-	TIM_ClearFlag(TIM14, TIM_IT_Update);
 
 	static size_t step = 0;
 
@@ -239,9 +226,9 @@ void TIM14_IRQHandler(void) {
 //    if (!valA || !valB || !valC)
 //        trace_printf("%d %d %d\n", valA, valB, valC);
 
-    BSP_SetPinPWM(BSP_Pin_PWM_1, valA);
-    BSP_SetPinPWM(BSP_Pin_PWM_2, valB);
-    BSP_SetPinPWM(BSP_Pin_PWM_3, valC);
+    setPwm(BSP_Pin_PWM_1, valA);
+    setPwm(BSP_Pin_PWM_2, valB);
+    setPwm(BSP_Pin_PWM_3, valC);
 
     BSP_SetPinVal(BSP_Pin_POL_1, valA > 0);
     BSP_SetPinVal(BSP_Pin_POL_2, valB > 0);
@@ -249,6 +236,7 @@ void TIM14_IRQHandler(void) {
 
 	if (++step >= stepsMax)
 	    step = 0;
+	TIM_ClearFlag(TIM14, TIM_IT_Update);
 }
 
 static inline void setSystemLed(_Bool state) {
