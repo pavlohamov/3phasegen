@@ -88,8 +88,8 @@ static void initialize_RCC(void) {
 	RCC_ADCCLKConfig(RCC_ADCCLK_PCLK_Div4);
 
 	RCC->AHBENR |= RCC_AHBPeriph_GPIOA | RCC_AHBPeriph_GPIOB | RCC_AHBPeriph_GPIOF;
-	RCC->APB2ENR |= RCC_APB2Periph_ADC1;
 	RCC->APB1ENR |= RCC_APB1Periph_TIM3 | RCC_APB1Periph_TIM14;
+    RCC->APB2ENR |= RCC_APB2Periph_ADC1 | RCC_APB2Periph_USART1;
 
 	RCC->AHBRSTR |= RCC_AHBPeriph_GPIOA | RCC_AHBPeriph_GPIOB | RCC_AHBPeriph_GPIOF;
     RCC->AHBRSTR &= ~(RCC_AHBPeriph_GPIOA | RCC_AHBPeriph_GPIOB | RCC_AHBPeriph_GPIOF);
@@ -180,10 +180,10 @@ static inline void setPwm(const BSP_Pin_t pin, int32_t value) {
     }
 	switch (pin) {
 	case BSP_Pin_PWM_1:
-		TIM3->CCR2 = value;
+		TIM3->CCR4 = value;
 		break;
 	case BSP_Pin_PWM_2:
-		TIM3->CCR4 = value;
+		TIM3->CCR2 = value;
 		break;
 	case BSP_Pin_PWM_3:
 		TIM3->CCR1 = value;
@@ -240,7 +240,7 @@ void TIM14_IRQHandler(void) {
 }
 
 static inline void setSystemLed(_Bool state) {
-	BSP_SetPinVal(BSP_Pin_LED, state);
+	BSP_SetPinVal(BSP_Pin_LedRed, state);
 }
 
 static void onAdcTimeout(uint32_t id, void *data) {

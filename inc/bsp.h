@@ -18,6 +18,10 @@ extern "C" {
 #define MINUTE_TICKS (BSP_TICKS_PER_SECOND*60)
 
 typedef enum {
+
+    BSP_Pin_UART_TX,
+    BSP_Pin_UART_RX,
+
 	BSP_Pin_PWM_1,
 	BSP_Pin_PWM_2,
 	BSP_Pin_PWM_3,
@@ -26,8 +30,11 @@ typedef enum {
 	BSP_Pin_POL_2,
 	BSP_Pin_POL_3,
 
-	BSP_Pin_LED,
-	BSP_Pin_Adc,
+	BSP_Pin_LedYellow,
+	BSP_Pin_LedRed,
+
+	BSP_Pin_Adc_0,
+	BSP_Pin_Adc_1,
 
 	BSP_Pin_Last,
 } BSP_Pin_t;
