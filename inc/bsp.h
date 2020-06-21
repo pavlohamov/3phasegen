@@ -13,6 +13,7 @@ extern "C" {
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 
 #define BSP_TICKS_PER_SECOND 1000
 #define MINUTE_TICKS (BSP_TICKS_PER_SECOND*60)
@@ -49,6 +50,8 @@ void BSP_SetPinVal(const BSP_Pin_t pin, const _Bool state);
 _Bool BSP_GetPinVal(const BSP_Pin_t pin);
 
 void BSP_SetSinBase(const uint32_t value);
+
+int BSP_write(const void *ptr, size_t size);
 
 #ifdef __cplusplus
 }

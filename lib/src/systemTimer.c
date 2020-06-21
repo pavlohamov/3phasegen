@@ -45,9 +45,7 @@ void System_setStatus(systemStatus_t status) {
 void System_init(ledOutputControl_t control) {
 
 	s_systemLed = control;
-	RCC_ClocksTypeDef RCC_ClockFreq;
-	RCC_GetClocksFreq(&RCC_ClockFreq);
-	SysTick_Config(RCC_ClockFreq.HCLK_Frequency / BSP_TICKS_PER_SECOND);
+	SysTick_Config(HAL_RCC_GetHCLKFreq() / BSP_TICKS_PER_SECOND);
 
 	System_setStatus(INFORM_INIT);
 }
@@ -72,6 +70,10 @@ uint32_t System_getUptime(void) {
 
 uint32_t System_getUptimeMs(void) {
 	return s_uptime.msec;
+}
+
+uint32_t HAL_GetTick(void) {
+    return s_uptime.sec * BSP_TICKS_PER_SECOND + s_uptime.msec;
 }
 
 void SysTick_Handler(void);

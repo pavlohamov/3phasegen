@@ -85,11 +85,12 @@ trace_initialize(void)
 
 // This function is called from _write() for fd==1 or fd==2 and from some
 // of the trace_* functions.
-
+extern int BSP_write(const void *ptr, size_t size);
 ssize_t
 trace_write (const char* buf __attribute__((unused)),
 	     size_t nbyte __attribute__((unused)))
 {
+    return BSP_write(buf, nbyte);
 #if defined(OS_USE_TRACE_ITM)
   return _trace_write_itm (buf, nbyte);
 #elif defined(OS_USE_TRACE_SEMIHOSTING_STDOUT)

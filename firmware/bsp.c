@@ -10,26 +10,33 @@
 #include "systemTimer.h"
 #include "Queue.h"
 #include "timers.h"
-#include "Trace.h"
 
-#include "stm32f0xx_rcc.h"
-#include "stm32f0xx_gpio.h"
-#include "stm32f0xx_adc.h"
-#include "stm32f0xx_iwdg.h"
-#include "stm32f0xx_tim.h"
+
+#include "dbg_base.h"
+#if 01
+#include "dbg_trace.h"
+#endif
+
+//#include "stm32f0xx_hal_def.h"
+
+#include "stm32f0xx_hal_rcc.h"
+//#include "stm32f0xx_hal_gpio.h"
+#include "stm32f0xx_hal_iwdg.h"
+#include "stm32f0xx_hal_usart.h"
+#include "stm32f0xx_hal_adc.h"
+#include "stm32f0xx_hal_tim.h"
 
 #include <stddef.h>
 #include <stdlib.h>
 #include <math.h>
 
-#define ADC_TIMEOUT (BSP_TICKS_PER_SECOND/50)
+#define ADC_TIMEOUT (BSP_TICKS_PER_SECOND/40)
 
 static inline void initialize_RCC(void);
 static inline void initWdt(void);
+static inline void initUart(void);
 static inline void initADC(void);
-static inline void initADC_NVIC(void);
 static inline void initPWM_TIM(void);
-static inline void initPWM_OC(void);
 static inline void initSIN_TIM(void);
 static inline void setPwm(const BSP_Pin_t pin, int32_t value);
 
@@ -37,18 +44,58 @@ static void setSystemLed(_Bool state);
 
 static void onAdcTimeout(uint32_t id, void *data);
 
-static uint32_t s_adcTimerId = INVALID_HANDLE;
+typedef struct {
+    int8_t *a;
+    int8_t *b;
+    int8_t *c;
+    uint16_t presc;
+    size_t count;
+} PhaseCfg_t;
+
+static struct {
+    bool started;
+    bool pending;
+    PhaseCfg_t cfg;
+} s_phase;
+
+static struct {
+    IWDG_HandleTypeDef wdt;
+    USART_HandleTypeDef usart;
+    TIM_HandleTypeDef pwmTim;
+    TIM_HandleTypeDef sinTim;
+    ADC_HandleTypeDef adc;
+    uint32_t adcTim;
+    struct {
+        uint16_t adcBuff[10];
+        int8_t adcCur;
+    };
+} s_bsp = {
+    .wdt = { IWDG, .Init = { IWDG_PRESCALER_4, 0x07FF, IWDG_WINDOW_DISABLE } },
+    .pwmTim = { TIM3, .Init = { 0x07, TIM_COUNTERMODE_UP, 0x7E, TIM_CLOCKDIVISION_DIV1, 0, TIM_AUTORELOAD_PRELOAD_DISABLE, } },
+    .usart = { USART1, { 921600, USART_WORDLENGTH_8B, USART_STOPBITS_1, USART_PARITY_NONE, USART_MODE_TX, USART_POLARITY_LOW, USART_PHASE_1EDGE, USART_LASTBIT_DISABLE, } },
+    .sinTim = { TIM14, .Init = { 0xFF, TIM_COUNTERMODE_UP, 0xFF, TIM_CLOCKDIVISION_DIV1, 0, TIM_AUTORELOAD_PRELOAD_DISABLE, } },
+    .adc = { ADC1, .Init = { ADC_CLOCK_SYNC_PCLK_DIV2, ADC_RESOLUTION_12B, ADC_DATAALIGN_RIGHT, ADC_SCAN_DIRECTION_FORWARD, ADC_EOC_SINGLE_CONV, DISABLE, DISABLE,
+                            .ContinuousConvMode = DISABLE,
+                            .DiscontinuousConvMode = DISABLE,
+                            .ExternalTrigConv = ADC_SOFTWARE_START,
+                            .ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_RISING,
+                            .DMAContinuousRequests = DISABLE,
+                            .Overrun = ADC_OVR_DATA_OVERWRITTEN,
+                            .SamplingTimeCommon = ADC_SAMPLETIME_239CYCLES_5} },
+    .adcTim = INVALID_HANDLE,
+};
+
 
 _Bool BSP_Init(void) {
 	initialize_RCC();
 	initWdt();
 	BSP_InitGpio();
+	initUart();
 	System_init(setSystemLed);
 	System_setStatus(INFORM_IDLE);
 
 	initADC();
 	initPWM_TIM();
-	initPWM_OC();
 	initSIN_TIM();
 
     setPwm(BSP_Pin_PWM_1, 0x7E);
@@ -60,117 +107,135 @@ _Bool BSP_Init(void) {
     BSP_SetPinVal(BSP_Pin_POL_3, 0);
 
 //	BSP_SetSinBase(0x7FFF);
+    DBGMSG_INFO("SysClock %ld", HAL_RCC_GetSysClockFreq());
+    DBGMSG_INFO("    HCLK %ld", HAL_RCC_GetHCLKFreq());
+    DBGMSG_INFO("   PCLK1 %ld", HAL_RCC_GetPCLK1Freq());
 	return true;
 }
 
 void BSP_FeedWatchdog(void) {
-	IWDG_ReloadCounter();
+    HAL_IWDG_Refresh(&s_bsp.wdt);
 }
 
-void BSP_SetSinBase(const uint32_t value) {
-	TIM_TimeBaseInitTypeDef iface = {
-        value,
-        TIM_CounterMode_Up,
-        0xFF,
-        TIM_CKD_DIV1,
-        0
-	};
+#define PI 3.14159265
+void fillBuffer(int8_t *buff, int size, int off) {
+    double angle = 360.0/size;
+    for (int i = 0; i < size; ++i) {
+        double rad = (off + angle*i)*PI/180.0;
+        double val = sin(rad);
+        buff[i] = 127 * val;
+    }
+}
 
-	TIM_Cmd(TIM14, DISABLE);
-	TIM_TimeBaseInit(TIM14, &iface);
-	TIM_ITConfig(TIM14, TIM_IT_Update, ENABLE);
-	TIM_Cmd(TIM14, ENABLE);
+void BSP_SetSinBase(const uint32_t frequency) {
+    static uint32_t lastFreq;
+    if (!frequency || lastFreq == frequency)
+        return;
+    lastFreq = frequency;
+    int frq = HAL_RCC_GetPCLK1Freq() / frequency;
+    int period = 128;
+    int elements = 128;
+    int prescaller = 0;
+    do {
+        prescaller = frq / period / elements;
+        if (prescaller)
+            break;
+        if (elements > 6) {
+            elements--;
+            continue;
+        }
+        if (period > 2) {
+            period /= 2;
+            elements = 128;
+            if (!period)
+                return;
+
+            continue;
+        }
+    } while (1);
+    DBGMSG_H("frequency %ld hz - period %d el %d prsc %d", frequency, period, elements, prescaller);
+    PhaseCfg_t cfg = { .presc = prescaller, .count = elements };
+    cfg.a = malloc(elements);
+    if (!cfg.a)
+        return;
+    cfg.b = malloc(elements);
+    if (!cfg.b) {
+        free(cfg.a);
+        return;
+    }
+    cfg.c = malloc(elements);
+    if (!cfg.c) {
+        free(cfg.a);
+        free(cfg.b);
+        return;
+    }
+    fillBuffer(cfg.a, elements, 0);
+    fillBuffer(cfg.b, elements, 120);
+    fillBuffer(cfg.c, elements, 240);
+    if (!s_phase.started) {
+        s_phase.cfg = cfg;
+        s_phase.started = true;
+        HAL_TIM_Base_Start_IT(&s_bsp.sinTim);
+        return;
+    }
+    while (s_phase.pending)
+        __WFI();
+    s_phase.cfg = cfg;
+    s_phase.pending = true;
+
 }
 
 static void initialize_RCC(void) {
-	RCC_HSEConfig(RCC_HSE_OFF);
-	RCC_WaitForHSEStartUp(); // really we wait for shutdown
-	RCC_ADCCLKConfig(RCC_ADCCLK_PCLK_Div4);
+    __HAL_RCC_HSE_CONFIG(RCC_HSE_OFF);
 
-	RCC->AHBENR |= RCC_AHBPeriph_GPIOA | RCC_AHBPeriph_GPIOB | RCC_AHBPeriph_GPIOF;
-	RCC->APB1ENR |= RCC_APB1Periph_TIM3 | RCC_APB1Periph_TIM14;
-    RCC->APB2ENR |= RCC_APB2Periph_ADC1 | RCC_APB2Periph_USART1;
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+    __HAL_RCC_GPIOF_CLK_ENABLE();
 
-	RCC->AHBRSTR |= RCC_AHBPeriph_GPIOA | RCC_AHBPeriph_GPIOB | RCC_AHBPeriph_GPIOF;
-    RCC->AHBRSTR &= ~(RCC_AHBPeriph_GPIOA | RCC_AHBPeriph_GPIOB | RCC_AHBPeriph_GPIOF);
+    __HAL_RCC_TIM3_CLK_ENABLE();
+    __HAL_RCC_TIM14_CLK_ENABLE();
 
-    RCC->APB2RSTR |= RCC_APB2Periph_ADC1;
-    RCC->APB2RSTR &= ~RCC_APB2Periph_ADC1;
+    __HAL_RCC_USART1_CLK_ENABLE();
+    __HAL_RCC_DBGMCU_CLK_ENABLE();
+
+    __HAL_RCC_ADC1_CLK_ENABLE();
 }
 
 static void initWdt(void) {
-//	IWDG_WriteAccessCmd(IWDG_WriteAccess_Enable);
-//	IWDG_SetPrescaler(IWDG_Prescaler_32);
-//	IWDG_SetReload(0x0FFF);
-//	IWDG_ReloadCounter();
-//	IWDG_Enable();
+    HAL_IWDG_Init(&s_bsp.wdt);
+    __HAL_IWDG_START(&s_bsp.wdt);
+    HAL_IWDG_Refresh(&s_bsp.wdt);
+}
+
+static inline void initUart(void) {
+    HAL_USART_Init(&s_bsp.usart);
 }
 
 static void initADC(void) {
-	const static ADC_InitTypeDef iface = {
-		ADC_Resolution_12b,
-		DISABLE,
-		ADC_ExternalTrigConvEdge_None,
-		0,
-		ADC_DataAlign_Right,
-		ADC_ScanDirection_Upward
-	};
-
-	ADC_Init(ADC1, (ADC_InitTypeDef*)&iface);
-	ADC_ClockModeConfig(ADC1, ADC_ClockMode_SynClkDiv4);
-	ADC_ChannelConfig(ADC1, ADC_Channel_0, ADC_SampleTime_239_5Cycles);
-
-	initADC_NVIC();
-	ADC_ContinuousModeCmd(ADC1, DISABLE);
-	ADC_DiscModeCmd(ADC1, ENABLE);
-
-	ADC_ITConfig(ADC1, ADC_IT_ADRDY | ADC_IT_EOC, ENABLE);
-
-	ADC_GetCalibrationFactor(ADC1);
-	ADC_Cmd(ADC1, ENABLE);
-
-	s_adcTimerId = Timer_newArmed(ADC_TIMEOUT, true, onAdcTimeout, NULL);
-}
-
-static void initADC_NVIC(void) {
-	static const NVIC_InitTypeDef nvic = {
-        ADC1_IRQn,
-        0,
-        ENABLE
-	};
-	NVIC_Init((NVIC_InitTypeDef*)&nvic);
+    HAL_ADC_Init(&s_bsp.adc);
+    HAL_NVIC_EnableIRQ(ADC1_IRQn);
+	s_bsp.adcTim = Timer_newArmed(ADC_TIMEOUT, true, onAdcTimeout, NULL);
 }
 
 static void initPWM_TIM(void) {
-	static const TIM_TimeBaseInitTypeDef iface = {
-		0x07,
-		TIM_CounterMode_Up,
-		0x7E,
-		TIM_CKD_DIV1,
-		0
-	};
-
-	TIM_TimeBaseInit(TIM3, (TIM_TimeBaseInitTypeDef*)&iface);
-	TIM_Cmd(TIM3, ENABLE);
-}
-
-static void initPWM_OC(void) {
-
-    static const TIM_OCInitTypeDef pwm = {
-        TIM_OCMode_PWM1,
-		TIM_OutputState_Enable,
-		TIM_OutputNState_Enable,
-		0,
-		TIM_OCPolarity_High,
-		TIM_OCNPolarity_Low,
-		TIM_OCIdleState_Set,
-		TIM_OCNIdleState_Reset
+    static const TIM_OC_InitTypeDef pwm = {
+        TIM_OCMODE_PWM1,
+        0x3F,
+        TIM_OCPOLARITY_HIGH,
+        TIM_OCNPOLARITY_LOW,
+        TIM_OCFAST_ENABLE,
+        TIM_OCIDLESTATE_RESET,
+        TIM_OCNIDLESTATE_SET,
     };
-    TIM_OC1Init(TIM3, (TIM_OCInitTypeDef*)&pwm);
-    TIM_OC2Init(TIM3, (TIM_OCInitTypeDef*)&pwm);
-    TIM_OC4Init(TIM3, (TIM_OCInitTypeDef*)&pwm);
 
-    TIM3->CCER |= (TIM_CCx_Enable << TIM_Channel_1) | (TIM_CCx_Enable << TIM_Channel_2) | (TIM_CCx_Enable << TIM_Channel_4);
+    HAL_TIM_PWM_Init(&s_bsp.pwmTim);
+    HAL_TIM_PWM_ConfigChannel(&s_bsp.pwmTim, (TIM_OC_InitTypeDef*)&pwm, TIM_CHANNEL_1);
+    HAL_TIM_PWM_ConfigChannel(&s_bsp.pwmTim, (TIM_OC_InitTypeDef*)&pwm, TIM_CHANNEL_2);
+    HAL_TIM_PWM_ConfigChannel(&s_bsp.pwmTim, (TIM_OC_InitTypeDef*)&pwm, TIM_CHANNEL_4);
+    HAL_TIM_PWM_Start(&s_bsp.pwmTim, TIM_CHANNEL_1);
+    HAL_TIM_PWM_Start(&s_bsp.pwmTim, TIM_CHANNEL_2);
+    HAL_TIM_PWM_Start(&s_bsp.pwmTim, TIM_CHANNEL_4);
+
 }
 
 static inline void setPwm(const BSP_Pin_t pin, int32_t value) {
@@ -180,13 +245,13 @@ static inline void setPwm(const BSP_Pin_t pin, int32_t value) {
     }
 	switch (pin) {
 	case BSP_Pin_PWM_1:
-		TIM3->CCR4 = value;
+	    __HAL_TIM_SET_COMPARE(&s_bsp.pwmTim, TIM_CHANNEL_4, value);
 		break;
 	case BSP_Pin_PWM_2:
-		TIM3->CCR2 = value;
+        __HAL_TIM_SET_COMPARE(&s_bsp.pwmTim, TIM_CHANNEL_2, value);
 		break;
 	case BSP_Pin_PWM_3:
-		TIM3->CCR1 = value;
+        __HAL_TIM_SET_COMPARE(&s_bsp.pwmTim, TIM_CHANNEL_1, value);
 		break;
 	default:
 		return;
@@ -195,33 +260,28 @@ static inline void setPwm(const BSP_Pin_t pin, int32_t value) {
 }
 
 static void initSIN_TIM(void) {
-	static const NVIC_InitTypeDef nvic = {
-		TIM14_IRQn,
-		0,
-		ENABLE
-	};
-	NVIC_Init((NVIC_InitTypeDef*)&nvic);
+    HAL_TIM_Base_Init(&s_bsp.sinTim);
+    HAL_NVIC_EnableIRQ(TIM14_IRQn);
 }
-
-static const int8_t phaseA[] = {
-	0, 39, 75, 103, 121, 127, 121, 103, 75, 39, 0, -39, -75, -103, -121, -127, -121, -103, -75, -39,
-};
-static const int8_t phaseB[] = {
-	110, 85, 52, 13, -26, -64, -94, -116, -126, -124, -110, -85, -52, -13, 26, 63, 94, 116, 126, 124,
-};
-static const int8_t phaseC[] = {
-	-110, -124, -126, -116, -94, -64, -26, 13, 52, 85, 110, 124, 126, 116, 94, 63, 26, -13, -52, -85,
-
-};
-static const size_t stepsMax = sizeof(phaseA)/sizeof(*phaseA);
 
 void TIM14_IRQHandler(void) {
 
+    static PhaseCfg_t cfg;
 	static size_t step = 0;
+	if (s_phase.pending) {
+	    step = s_phase.cfg.count * step / cfg.count;
+        if (s_phase.cfg.presc != cfg.presc)
+            __HAL_TIM_SET_PRESCALER(&s_bsp.sinTim, s_phase.cfg.presc);
+        free(cfg.a);
+        free(cfg.b);
+        free(cfg.c);
+	    cfg = s_phase.cfg;
+	    s_phase.pending = false;
+	}
 
-    const int32_t valA = phaseA[step];
-    const int32_t valB = phaseB[step];
-    const int32_t valC = phaseC[step];
+    const int32_t valA = cfg.a[step];
+    const int32_t valB = cfg.b[step];
+    const int32_t valC = cfg.c[step];
 
 //    if (!valA || !valB || !valC)
 //        trace_printf("%d %d %d\n", valA, valB, valC);
@@ -234,9 +294,8 @@ void TIM14_IRQHandler(void) {
     BSP_SetPinVal(BSP_Pin_POL_2, valB > 0);
     BSP_SetPinVal(BSP_Pin_POL_3, valC > 0);
 
-	if (++step >= stepsMax)
-	    step = 0;
-	TIM_ClearFlag(TIM14, TIM_IT_Update);
+    step = (step + 1) % cfg.count;
+	__HAL_TIM_CLEAR_FLAG(&s_bsp.sinTim, TIM_FLAG_UPDATE);
 }
 
 static inline void setSystemLed(_Bool state) {
@@ -244,22 +303,41 @@ static inline void setSystemLed(_Bool state) {
 }
 
 static void onAdcTimeout(uint32_t id, void *data) {
-	Timer_disarm(id);
-	ADC_ChannelConfig(ADC1, ADC_Channel_0, ADC_SampleTime_239_5Cycles);
-	ADC_StartOfConversion(ADC1);
+    Timer_disarm(id);
+    ADC_ChannelConfTypeDef cfg = {
+        ADC_CHANNEL_0,
+        ADC_RANK_CHANNEL_NUMBER,
+        0
+    };
+    HAL_ADC_ConfigChannel(&s_bsp.adc, &cfg);
+    HAL_ADC_Start_IT(&s_bsp.adc);
 }
 
+static inline int adc_raw_to_millivolts(int32_t ref_mv, uint8_t resolution, int32_t val) {
+    int32_t adc_mv = val * ref_mv;
+    return (adc_mv >> resolution);
+}
+
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
+    static const int size = sizeof(s_bsp.adcBuff)/sizeof(*s_bsp.adcBuff);
+    s_bsp.adcBuff[s_bsp.adcCur++] = HAL_ADC_GetValue(hadc);
+    if (s_bsp.adcCur >= size)
+         s_bsp.adcCur = 0;
+    uint32_t val = 0;
+    for (int i = 0; i < size; ++i)
+        val += s_bsp.adcBuff[i];
+    val /= size;
+    val = adc_raw_to_millivolts(3300, 12, val);
+    EventQueue_Push(EVENT_ADC, (void*)val, NULL);
+    Timer_rearm(s_bsp.adcTim);
+}
 void ADC1_IRQHandler(void) {
-	if (ADC_GetITStatus(ADC1, ADC_IT_ADRDY)) {
-		ADC_StartOfConversion(ADC1);
-		ADC_ClearITPendingBit(ADC1, ADC_IT_ADRDY);
-	}
-
-	if (ADC_GetITStatus(ADC1, ADC_IT_EOC)) {
-		uint32_t val = ADC_GetConversionValue(ADC1);
-		EventQueue_Push(EVENT_ADC, (void*)val, NULL);
-		Timer_rearm(s_adcTimerId);
-		ADC_ClearITPendingBit(ADC1, ADC_IT_EOC);
-	}
+    HAL_ADC_IRQHandler(&s_bsp.adc);
 }
+
+int BSP_write(const void *ptr, size_t size) {
+    HAL_USART_Transmit(&s_bsp.usart, (uint8_t*)ptr, size, 0xFFFF);
+    return size;
+}
+
 

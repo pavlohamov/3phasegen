@@ -12,13 +12,13 @@ static volatile int s_lock;
 
 void System_Lock(void) {
     if (!s_lock++) {
-//        __disable_irq();
+        __disable_irq();
     }
 }
 
 void System_Unlock(void) {
     if (s_lock-- <= 1) {
-//        __enable_irq();
+        __enable_irq();
     }
 }
 
