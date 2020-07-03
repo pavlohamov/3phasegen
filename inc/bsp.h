@@ -49,7 +49,7 @@ void BSP_FeedWatchdog(void);
 void BSP_SetPinVal(const BSP_Pin_t pin, const _Bool state);
 _Bool BSP_GetPinVal(const BSP_Pin_t pin);
 
-void BSP_SetSinBase(const uint32_t value);
+void BSP_SetSinBase(uint32_t value);
 
 int BSP_write(const void *ptr, size_t size);
 

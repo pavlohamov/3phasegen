@@ -30,7 +30,7 @@
 #include <stdlib.h>
 #include <math.h>
 
-#define ADC_TIMEOUT (BSP_TICKS_PER_SECOND/40)
+#define ADC_TIMEOUT (BSP_TICKS_PER_SECOND/10)
 
 static inline void initialize_RCC(void);
 static inline void initWdt(void);
@@ -48,6 +48,7 @@ typedef struct {
     int8_t *a;
     int8_t *b;
     int8_t *c;
+    uint16_t period;
     uint16_t presc;
     size_t count;
 } PhaseCfg_t;
@@ -71,9 +72,9 @@ static struct {
     };
 } s_bsp = {
     .wdt = { IWDG, .Init = { IWDG_PRESCALER_4, 0x07FF, IWDG_WINDOW_DISABLE } },
-    .pwmTim = { TIM3, .Init = { 0x07, TIM_COUNTERMODE_UP, 0x7E, TIM_CLOCKDIVISION_DIV1, 0, TIM_AUTORELOAD_PRELOAD_DISABLE, } },
+    .pwmTim = { TIM3, .Init = { 0x07*20, TIM_COUNTERMODE_UP, 0x7F, TIM_CLOCKDIVISION_DIV1, 0, TIM_AUTORELOAD_PRELOAD_DISABLE, } },
     .usart = { USART1, { 921600, USART_WORDLENGTH_8B, USART_STOPBITS_1, USART_PARITY_NONE, USART_MODE_TX, USART_POLARITY_LOW, USART_PHASE_1EDGE, USART_LASTBIT_DISABLE, } },
-    .sinTim = { TIM14, .Init = { 0xFF, TIM_COUNTERMODE_UP, 0xFF, TIM_CLOCKDIVISION_DIV1, 0, TIM_AUTORELOAD_PRELOAD_DISABLE, } },
+    .sinTim = { TIM14, .Init = { 0, TIM_COUNTERMODE_UP, 0xFFFF, TIM_CLOCKDIVISION_DIV1, 0, TIM_AUTORELOAD_PRELOAD_DISABLE, } },
     .adc = { ADC1, .Init = { ADC_CLOCK_SYNC_PCLK_DIV2, ADC_RESOLUTION_12B, ADC_DATAALIGN_RIGHT, ADC_SCAN_DIRECTION_FORWARD, ADC_EOC_SINGLE_CONV, DISABLE, DISABLE,
                             .ContinuousConvMode = DISABLE,
                             .DiscontinuousConvMode = DISABLE,
@@ -98,15 +99,14 @@ _Bool BSP_Init(void) {
 	initPWM_TIM();
 	initSIN_TIM();
 
-    setPwm(BSP_Pin_PWM_1, 0x7E);
-	setPwm(BSP_Pin_PWM_2, 0x7E);
-    setPwm(BSP_Pin_PWM_3, 0x7E);
+    setPwm(BSP_Pin_PWM_1, 0x00);
+	setPwm(BSP_Pin_PWM_2, 0x00);
+    setPwm(BSP_Pin_PWM_3, 0x00);
 
     BSP_SetPinVal(BSP_Pin_POL_1, 0);
     BSP_SetPinVal(BSP_Pin_POL_2, 0);
     BSP_SetPinVal(BSP_Pin_POL_3, 0);
 
-//	BSP_SetSinBase(0x7FFF);
     DBGMSG_INFO("SysClock %ld", HAL_RCC_GetSysClockFreq());
     DBGMSG_INFO("    HCLK %ld", HAL_RCC_GetHCLKFreq());
     DBGMSG_INFO("   PCLK1 %ld", HAL_RCC_GetPCLK1Freq());
@@ -118,71 +118,96 @@ void BSP_FeedWatchdog(void) {
 }
 
 #define PI 3.14159265
-void fillBuffer(int8_t *buff, int size, int off) {
-    double angle = 360.0/size;
+void fillBuffer(int8_t *buff, int period, int size, int off) {
+    float angle = 360.0/size;
     for (int i = 0; i < size; ++i) {
-        double rad = (off + angle*i)*PI/180.0;
-        double val = sin(rad);
-        buff[i] = 127 * val;
+        float rad = (off + angle*i)*PI/180.0;
+        float val = sinf(rad);
+        buff[i] = (period) * val;
     }
 }
 
-void BSP_SetSinBase(const uint32_t frequency) {
+void BSP_SetSinBase(uint32_t frequency) {
+    frequency = frequency / 5 * 5;
     static uint32_t lastFreq;
-    if (!frequency || lastFreq == frequency)
+    if (lastFreq == frequency)
         return;
-    lastFreq = frequency;
-    int frq = HAL_RCC_GetPCLK1Freq() / frequency;
-    int period = 128;
-    int elements = 128;
-    int prescaller = 0;
-    do {
-        prescaller = frq / period / elements;
-        if (prescaller)
-            break;
-        if (elements > 6) {
-            elements--;
-            continue;
-        }
-        if (period > 2) {
-            period /= 2;
-            elements = 128;
-            if (!period)
-                return;
-
-            continue;
-        }
-    } while (1);
-    DBGMSG_H("frequency %ld hz - period %d el %d prsc %d", frequency, period, elements, prescaller);
-    PhaseCfg_t cfg = { .presc = prescaller, .count = elements };
-    cfg.a = malloc(elements);
-    if (!cfg.a)
-        return;
-    cfg.b = malloc(elements);
-    if (!cfg.b) {
-        free(cfg.a);
+    if (!frequency) {
+        lastFreq = 0;
+        HAL_TIM_Base_Stop_IT(&s_bsp.sinTim);
+        BSP_SetPinVal(BSP_Pin_POL_1, 0);
+        BSP_SetPinVal(BSP_Pin_POL_2, 0);
+        BSP_SetPinVal(BSP_Pin_POL_3, 0);
+        setPwm(BSP_Pin_PWM_1, 0);
+        setPwm(BSP_Pin_PWM_2, 0);
+        setPwm(BSP_Pin_PWM_3, 0);
         return;
     }
-    cfg.c = malloc(elements);
-    if (!cfg.c) {
-        free(cfg.a);
-        free(cfg.b);
-        return;
-    }
-    fillBuffer(cfg.a, elements, 0);
-    fillBuffer(cfg.b, elements, 120);
-    fillBuffer(cfg.c, elements, 240);
-    if (!s_phase.started) {
-        s_phase.cfg = cfg;
-        s_phase.started = true;
+    if (!lastFreq && s_phase.started)
         HAL_TIM_Base_Start_IT(&s_bsp.sinTim);
-        return;
+    lastFreq = frequency;
+//    int frq = HAL_RCC_GetPCLK1Freq() / frequency / 2;
+    int period = 508;
+//    int elements = 128;
+    int elements = 118;
+    int prescaller = 1;
+//    const int minDelta = (frq / 20) ? (frq / 20) : 1;
+//    do {
+//        prescaller = frq / period / elements;
+//        if (!prescaller) {
+//            if (--elements < 6)
+//                return;
+//            continue;
+//        }
+//        int cf = prescaller * period * elements;
+//        int delt = (cf - frq);
+//        if (abs(delt) < minDelta)
+//            break;
+//    } while (1);
+    if (s_phase.cfg.a) {
+        free(s_phase.cfg.a);
+        free(s_phase.cfg.b);
+        free(s_phase.cfg.c);
+        s_phase.cfg.a = NULL;
     }
-    while (s_phase.pending)
-        __WFI();
-    s_phase.cfg = cfg;
-    s_phase.pending = true;
-
+    Timer_disarm(s_bsp.adcTim);
+    do {
+        PhaseCfg_t cfg = { .period = period, .presc = prescaller, .count = elements };
+        cfg.a = malloc(elements);
+        if (!cfg.a)
+            break;
+        cfg.b = malloc(elements);
+        if (!cfg.b) {
+            free(cfg.a);
+            break;
+        }
+        cfg.c = malloc(elements);
+        if (!cfg.c) {
+            free(cfg.a);
+            free(cfg.b);
+            break;
+        }
+        fillBuffer(cfg.a, 0x7F, elements, 0);
+#if 01
+        fillBuffer(cfg.b, 0x7F, elements, 120);
+        fillBuffer(cfg.c, 0x7F, elements, 240);
+#else
+        fillBuffer(cfg.b, 0x7F, elements, 180);
+        fillBuffer(cfg.c, 0x7F, elements, 90);
+#endif
+        DBGMSG_H("frequency %ld hz - period %d el %d prsc %d", frequency, period, elements, prescaller);
+        if (!s_phase.started) {
+            s_phase.cfg = cfg;
+            s_phase.started = true;
+            HAL_TIM_Base_Start_IT(&s_bsp.sinTim);
+            break;
+        }
+        while (s_phase.pending)
+            __WFI();
+        s_phase.cfg = cfg;
+        s_phase.pending = true;
+    } while (0);
+    Timer_rearm(s_bsp.adcTim);
 }
 
 static void initialize_RCC(void) {
@@ -202,9 +227,9 @@ static void initialize_RCC(void) {
 }
 
 static void initWdt(void) {
-    HAL_IWDG_Init(&s_bsp.wdt);
-    __HAL_IWDG_START(&s_bsp.wdt);
-    HAL_IWDG_Refresh(&s_bsp.wdt);
+//    HAL_IWDG_Init(&s_bsp.wdt);
+//    __HAL_IWDG_START(&s_bsp.wdt);
+//    HAL_IWDG_Refresh(&s_bsp.wdt);
 }
 
 static inline void initUart(void) {
@@ -213,6 +238,7 @@ static inline void initUart(void) {
 
 static void initADC(void) {
     HAL_ADC_Init(&s_bsp.adc);
+    HAL_NVIC_SetPriority(ADC1_IRQn, 3, 0);
     HAL_NVIC_EnableIRQ(ADC1_IRQn);
 	s_bsp.adcTim = Timer_newArmed(ADC_TIMEOUT, true, onAdcTimeout, NULL);
 }
@@ -235,7 +261,6 @@ static void initPWM_TIM(void) {
     HAL_TIM_PWM_Start(&s_bsp.pwmTim, TIM_CHANNEL_1);
     HAL_TIM_PWM_Start(&s_bsp.pwmTim, TIM_CHANNEL_2);
     HAL_TIM_PWM_Start(&s_bsp.pwmTim, TIM_CHANNEL_4);
-
 }
 
 static inline void setPwm(const BSP_Pin_t pin, int32_t value) {
@@ -270,29 +295,48 @@ void TIM14_IRQHandler(void) {
 	static size_t step = 0;
 	if (s_phase.pending) {
 	    step = s_phase.cfg.count * step / cfg.count;
-        if (s_phase.cfg.presc != cfg.presc)
-            __HAL_TIM_SET_PRESCALER(&s_bsp.sinTim, s_phase.cfg.presc);
-        free(cfg.a);
-        free(cfg.b);
-        free(cfg.c);
+        __HAL_TIM_SET_PRESCALER(&s_bsp.sinTim, s_phase.cfg.presc);
+        __HAL_TIM_SET_AUTORELOAD(&s_bsp.sinTim, s_phase.cfg.period);
+        PhaseCfg_t tmp = cfg;
 	    cfg = s_phase.cfg;
+	    s_phase.cfg = tmp;
 	    s_phase.pending = false;
 	}
 
     const int32_t valA = cfg.a[step];
     const int32_t valB = cfg.b[step];
     const int32_t valC = cfg.c[step];
-
 //    if (!valA || !valB || !valC)
 //        trace_printf("%d %d %d\n", valA, valB, valC);
 
     setPwm(BSP_Pin_PWM_1, valA);
-    setPwm(BSP_Pin_PWM_2, valB);
-    setPwm(BSP_Pin_PWM_3, valC);
+    if (valA)
+        BSP_SetPinVal(BSP_Pin_POL_1, valA < 0);
 
-    BSP_SetPinVal(BSP_Pin_POL_1, valA > 0);
-    BSP_SetPinVal(BSP_Pin_POL_2, valB > 0);
-    BSP_SetPinVal(BSP_Pin_POL_3, valC > 0);
+    setPwm(BSP_Pin_PWM_2, valB);
+    if (valB)
+        BSP_SetPinVal(BSP_Pin_POL_2, valB < 0);
+
+    setPwm(BSP_Pin_PWM_3, valC);
+    if (valC)
+        BSP_SetPinVal(BSP_Pin_POL_3, valC < 0);
+
+//    const bool polA = valA > 0;
+//    const bool polB = valB > 0;
+//    const bool polC = valC > 0;
+//    const bool pPolA = BSP_GetPinVal(BSP_Pin_POL_1);
+//    const bool pPolB = BSP_GetPinVal(BSP_Pin_POL_2);
+//    const bool pPolC = BSP_GetPinVal(BSP_Pin_POL_3);
+//
+//    if (!(polA != pPolA && !valA))
+//        BSP_SetPinVal(BSP_Pin_POL_1, polA);
+//
+//    if (!(polB != pPolB && !valA))
+//        BSP_SetPinVal(BSP_Pin_POL_2, polB);
+//
+//    if (!(polC != pPolC && !valA))
+//        BSP_SetPinVal(BSP_Pin_POL_3, polC);
+
 
     step = (step + 1) % cfg.count;
 	__HAL_TIM_CLEAR_FLAG(&s_bsp.sinTim, TIM_FLAG_UPDATE);

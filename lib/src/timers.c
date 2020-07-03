@@ -152,15 +152,16 @@ void Timer_makeTick(void) {
 	if (!s_timers.pushCb)
 		return;
 
-	System_Lock();
+//	System_Lock();
 	for (size_t i = 0; i < LIB_TIMERS_COUNT; i++) {
 		if (s_timers.occupied[i/TIMERS_BITS_COUNT] & 1<<(i%TIMERS_BITS_COUNT)) {
 			if ((s_timers.timer[i].flags & IS_ACTIVE) && !s_timers.timer[i].cnt--) {
 				// drop active flag. Set in callback
 				s_timers.timer[i].flags = IS_IN_CALLBACK | (s_timers.timer[i].flags & ~IS_ACTIVE);
-                System_Unlock();
-				s_timers.pushCb(s_timers.timer[i].id);
-                System_Lock();
+//                System_Unlock();
+//				s_timers.pushCb(s_timers.timer[i].id);
+                s_timers.timer[i].cb(s_timers.timer[i].id, s_timers.timer[i].cbData);
+//                System_Lock();
 				if (s_timers.timer[i].flags & IS_PERIODIC) {
 					s_timers.timer[i].flags &= ~IS_IN_CALLBACK;
 					s_timers.timer[i].flags |= IS_ACTIVE;
@@ -169,7 +170,7 @@ void Timer_makeTick(void) {
 			}
 		}
 	}
-	System_Unlock();
+//	System_Unlock();
 }
 
 void Timer_onTimerCb(uint32_t id) {
