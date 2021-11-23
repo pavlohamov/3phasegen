@@ -10,7 +10,6 @@ CFLAGS += \
 	-DSTM32F070x6 \
 	-DHSE_VALUE=8000000 \
 	-DUSE_HAL_DRIVER \
-	-DUSE_FULL_ASSERT \
 	\
 	-I./sdk/include/ \
 	-I./sdk/include/arm \
@@ -46,3 +45,5 @@ export SRC := \
 	./sdk/src/stm32f0-stdperiph/stm32f0xx_hal_tim.c \
 	./sdk/src/stm32f0-stdperiph/stm32f0xx_hal_tim_ex.c \
 
+
+#	-DUSE_FULL_ASSERT \

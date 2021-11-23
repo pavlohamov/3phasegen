@@ -45,9 +45,7 @@ static void setSystemLed(_Bool state);
 static void onAdcTimeout(uint32_t id, void *data);
 
 typedef struct {
-    int8_t *a;
-    int8_t *b;
-    int8_t *c;
+    int8_t *phase;
     uint16_t period;
     uint16_t presc;
     size_t count;
@@ -58,6 +56,9 @@ static struct {
     bool pending;
     PhaseCfg_t cfg;
 } s_phase;
+
+#define PWM_TIM_PERIOD 0x80
+#define PWM_PERIOD (PWM_TIM_PERIOD - 1)
 
 static struct {
     IWDG_HandleTypeDef wdt;
@@ -72,7 +73,7 @@ static struct {
     };
 } s_bsp = {
     .wdt = { IWDG, .Init = { IWDG_PRESCALER_4, 0x07FF, IWDG_WINDOW_DISABLE } },
-    .pwmTim = { TIM3, .Init = { 0x07*20, TIM_COUNTERMODE_UP, 0x7F, TIM_CLOCKDIVISION_DIV1, 0, TIM_AUTORELOAD_PRELOAD_DISABLE, } },
+    .pwmTim = { TIM3, .Init = { 0x00, TIM_COUNTERMODE_UP, PWM_TIM_PERIOD, TIM_CLOCKDIVISION_DIV1, 0, TIM_AUTORELOAD_PRELOAD_DISABLE, } },
     .usart = { USART1, { 921600, USART_WORDLENGTH_8B, USART_STOPBITS_1, USART_PARITY_NONE, USART_MODE_TX, USART_POLARITY_LOW, USART_PHASE_1EDGE, USART_LASTBIT_DISABLE, } },
     .sinTim = { TIM14, .Init = { 0, TIM_COUNTERMODE_UP, 0xFFFF, TIM_CLOCKDIVISION_DIV1, 0, TIM_AUTORELOAD_PRELOAD_DISABLE, } },
     .adc = { ADC1, .Init = { ADC_CLOCK_SYNC_PCLK_DIV2, ADC_RESOLUTION_12B, ADC_DATAALIGN_RIGHT, ADC_SCAN_DIRECTION_FORWARD, ADC_EOC_SINGLE_CONV, DISABLE, DISABLE,
@@ -100,7 +101,7 @@ _Bool BSP_Init(void) {
 	initSIN_TIM();
 
     setPwm(BSP_Pin_PWM_1, 0x00);
-	setPwm(BSP_Pin_PWM_2, 0x00);
+    setPwm(BSP_Pin_PWM_2, 0x00);
     setPwm(BSP_Pin_PWM_3, 0x00);
 
     BSP_SetPinVal(BSP_Pin_POL_1, 0);
@@ -110,6 +111,15 @@ _Bool BSP_Init(void) {
     DBGMSG_INFO("SysClock %ld", HAL_RCC_GetSysClockFreq());
     DBGMSG_INFO("    HCLK %ld", HAL_RCC_GetHCLKFreq());
     DBGMSG_INFO("   PCLK1 %ld", HAL_RCC_GetPCLK1Freq());
+
+//    setPwm(BSP_Pin_PWM_1, PWM_TIM_PERIOD);
+//    setPwm(BSP_Pin_PWM_2, PWM_TIM_PERIOD);
+//    setPwm(BSP_Pin_PWM_3, PWM_TIM_PERIOD >> 1);
+//
+    BSP_SetPinVal(BSP_Pin_POL_1, 1);
+//    BSP_SetPinVal(BSP_Pin_POL_2, 0);
+//    BSP_SetPinVal(BSP_Pin_POL_3, 0);
+
 	return true;
 }
 
@@ -150,7 +160,7 @@ void BSP_SetSinBase(uint32_t frequency) {
     int period = 508;
 //    int elements = 128;
     int elements = 118;
-    int prescaller = 1;
+    int prescaller = 4; // 320hz
 //    const int minDelta = (frq / 20) ? (frq / 20) : 1;
 //    do {
 //        prescaller = frq / period / elements;
@@ -164,37 +174,19 @@ void BSP_SetSinBase(uint32_t frequency) {
 //        if (abs(delt) < minDelta)
 //            break;
 //    } while (1);
-    if (s_phase.cfg.a) {
-        free(s_phase.cfg.a);
-        free(s_phase.cfg.b);
-        free(s_phase.cfg.c);
-        s_phase.cfg.a = NULL;
+    if (s_phase.cfg.phase) {
+        free(s_phase.cfg.phase);
+        s_phase.cfg.phase = NULL;
     }
     Timer_disarm(s_bsp.adcTim);
     do {
         PhaseCfg_t cfg = { .period = period, .presc = prescaller, .count = elements };
-        cfg.a = malloc(elements);
-        if (!cfg.a)
-            break;
-        cfg.b = malloc(elements);
-        if (!cfg.b) {
-            free(cfg.a);
+        cfg.phase = malloc(elements);
+        if (!cfg.phase) {
+            DBGMSG_ERR("can't alloc %d", elements);
             break;
         }
-        cfg.c = malloc(elements);
-        if (!cfg.c) {
-            free(cfg.a);
-            free(cfg.b);
-            break;
-        }
-        fillBuffer(cfg.a, 0x7F, elements, 0);
-#if 01
-        fillBuffer(cfg.b, 0x7F, elements, 120);
-        fillBuffer(cfg.c, 0x7F, elements, 240);
-#else
-        fillBuffer(cfg.b, 0x7F, elements, 180);
-        fillBuffer(cfg.c, 0x7F, elements, 90);
-#endif
+        fillBuffer(cfg.phase, PWM_PERIOD, elements, 0);
         DBGMSG_H("frequency %ld hz - period %d el %d prsc %d", frequency, period, elements, prescaller);
         if (!s_phase.started) {
             s_phase.cfg = cfg;
@@ -289,6 +281,17 @@ static void initSIN_TIM(void) {
     HAL_NVIC_EnableIRQ(TIM14_IRQn);
 }
 
+//static void inline setPwmPol(int ch, int pin, int val, int next) {
+//    if ((val < 0) ^ (next < 0)) {
+//        setPwm(ch, 0);
+//        BSP_SetPinVal(pin, next < 0);
+//    } else {
+//        setPwm(ch, val);
+//        BSP_SetPinVal(pin, val < 0);
+//    }
+//}
+
+
 void TIM14_IRQHandler(void) {
 
     static PhaseCfg_t cfg;
@@ -302,41 +305,31 @@ void TIM14_IRQHandler(void) {
 	    s_phase.cfg = tmp;
 	    s_phase.pending = false;
 	}
+    step = (step + 1) % cfg.count;
+    const int sb = (step + cfg.count/3) % cfg.count;
+    const int sc = (step + cfg.count*2/3) % cfg.count;
 
-    const int32_t valA = cfg.a[step];
-    const int32_t valB = cfg.b[step];
-    const int32_t valC = cfg.c[step];
+    const int32_t valA = cfg.phase[step];
+    const int32_t valB = cfg.phase[sb];
+    const int32_t valC = cfg.phase[sc];
 //    if (!valA || !valB || !valC)
-//        trace_printf("%d %d %d\n", valA, valB, valC);
+//        DBGMSG_H("%03ld %03ld %03ld", valA, valB, valC);
 
     setPwm(BSP_Pin_PWM_1, valA);
-    if (valA)
-        BSP_SetPinVal(BSP_Pin_POL_1, valA < 0);
+    BSP_SetPinVal(BSP_Pin_POL_1, valA < 0);
 
     setPwm(BSP_Pin_PWM_2, valB);
-    if (valB)
-        BSP_SetPinVal(BSP_Pin_POL_2, valB < 0);
+    BSP_SetPinVal(BSP_Pin_POL_2, valB < 0);
 
     setPwm(BSP_Pin_PWM_3, valC);
-    if (valC)
-        BSP_SetPinVal(BSP_Pin_POL_3, valC < 0);
+    BSP_SetPinVal(BSP_Pin_POL_3, valC < 0);
 
-//    const bool polA = valA > 0;
-//    const bool polB = valB > 0;
-//    const bool polC = valC > 0;
-//    const bool pPolA = BSP_GetPinVal(BSP_Pin_POL_1);
-//    const bool pPolB = BSP_GetPinVal(BSP_Pin_POL_2);
-//    const bool pPolC = BSP_GetPinVal(BSP_Pin_POL_3);
-//
-//    if (!(polA != pPolA && !valA))
-//        BSP_SetPinVal(BSP_Pin_POL_1, polA);
-//
-//    if (!(polB != pPolB && !valA))
-//        BSP_SetPinVal(BSP_Pin_POL_2, polB);
-//
-//    if (!(polC != pPolC && !valA))
-//        BSP_SetPinVal(BSP_Pin_POL_3, polC);
-
+//    const int32_t nextA = cfg.a[step];
+//    const int32_t nextB = cfg.b[step];
+//    const int32_t nextC = cfg.c[step];
+//    setPwmPol(BSP_Pin_PWM_1, BSP_Pin_POL_1, valA, nextA);
+//    setPwmPol(BSP_Pin_PWM_2, BSP_Pin_POL_2, valB, nextB);
+//    setPwmPol(BSP_Pin_PWM_3, BSP_Pin_POL_3, valC, nextC);
 
     step = (step + 1) % cfg.count;
 	__HAL_TIM_CLEAR_FLAG(&s_bsp.sinTim, TIM_FLAG_UPDATE);
